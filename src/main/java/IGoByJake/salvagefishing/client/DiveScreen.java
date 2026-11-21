@@ -44,8 +44,8 @@ public class DiveScreen extends Screen {
      *  a jig stays live so single taps keep jigging. */
     private static final float JIG = 100F, JIG_MAX = 210F;
     private static final float JIG_COOLDOWN = 0.5F, JIG_CHAIN = 0.75F, DOUBLE_TAP = 0.3F;
-    /** Mouse: full drift speed at this distance from the hook; a jig past this plus 10%. */
-    private static final float DRAG_RANGE = 25F, JIG_RANGE = DRAG_RANGE * 1.1F;
+    /** Mouse: full drift speed at this distance from the hook; a jig past this plus 40% (a buffer of full drift). */
+    private static final float DRAG_RANGE = 25F, JIG_RANGE = DRAG_RANGE * 1.4F;
     private static final float HOOK_R = 2.5F, ITEM_R = 11F;
     private static final ResourceLocation HOOK = new ResourceLocation("salvagefishing", "textures/gui/hook.png");
     private static final float START_DEPTH = -40F;
