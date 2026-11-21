@@ -396,11 +396,13 @@ public class DiveScreen extends Screen {
                 g.fill(px0, y, l, y2, body);
                 g.fill(l - 2, y, l, y2, rim);
                 if (row > 0 && lp < l) g.fill(lp, y, l, y + 2, rim); // ledge top
+                if (course.isShelfTop(wy) && lp < l) g.fill(lp, y, l, y + 2, 0x55FFFFFF);   // shelf: a pale top
             }
             if (r < px0 + pw) {
                 g.fill(r, y, px0 + pw, y2, body);
                 g.fill(r, y, r + 2, y2, rim);
                 if (row > 0 && rp > r) g.fill(r, y, rp, y + 2, rim);
+                if (course.isShelfTop(wy) && rp > r) g.fill(r, y, rp, y + 2, 0x55FFFFFF);
             }
         }
         int floor = sy(DiveCourse.DEPTH);

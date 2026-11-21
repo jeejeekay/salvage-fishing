@@ -21,6 +21,20 @@ public final class DiveCourse {
     public static final int MIN_GAP = 56;
 
     private final float[] left, right;
+    private final boolean[] shelfTopRow;
+    private final java.util.List<Shelf> shelves = new java.util.ArrayList<>();
+
+    /**
+     * A flat shelf of rock jutting out from one wall, for treasure to rest on. side -1 = left wall, 1 = right wall.
+     * {@code base} is where the wall is just above the shelf, {@code tip} where the shelf ends; the shelf's flat
+     * top is at depth {@code top}, between the two.
+     */
+    public record Shelf(float top, int side, float base, float tip) {
+        /** Room on the shelf for something 24 wide to sit. */
+        public boolean roomy() {
+            return Math.abs(tip - base) >= 28;
+        }
+    }
 
     public DiveCourse(long seed) {
         Random r = new Random(seed);
@@ -29,6 +43,13 @@ public final class DiveCourse {
         right = new float[rows];
         float[] centre = noise(r, rows), width = noise(r, rows);
         float[] ledgeL = new float[rows], ledgeR = new float[rows];
+        // Shelves first (rows, side, how far out, how thick), so the pointed ledges keep clear of them.
+        java.util.List<int[]> plan = new java.util.ArrayList<>();
+        int sy = 240 + r.nextInt(80);
+        while (sy < DEPTH - 60) {
+            plan.add(new int[]{sy / ROW, r.nextBoolean() ? -1 : 1, (4 + r.nextInt(4)) * STEP, 1 + r.nextInt(2)});
+            sy += 170 + r.nextInt(120);
+        }
         // Ledges that jut in from one side.
         int y = 150 + r.nextInt(60);
         while (y < DEPTH + 200) {
@@ -44,6 +65,12 @@ public final class DiveCourse {
                 side[row] = Math.max(side[row], Math.round(depth * shape / STEP) * STEP);
             }
             y += 90 + r.nextInt(110) - (int) (frac * 30);
+        }
+        for (int[] sh : plan) { // keep pointed ledges away from shelves
+            for (int k = Math.max(0, sh[0] - 4); k <= Math.min(rows - 1, sh[0] + sh[3] + 1); k++) {
+                ledgeL[k] = 0;
+                ledgeR[k] = 0;
+            }
         }
         float edge = WIDTH / 2F - 4F;
         for (int i = 0; i < rows; i++) {
@@ -65,6 +92,32 @@ public final class DiveCourse {
             left[i] = (float) Math.ceil(l / STEP) * STEP;
             right[i] = (float) Math.floor(rr / STEP) * STEP;
         }
+        // Shelves: a flat block of rock out from the wall, flat on top.
+        shelfTopRow = new boolean[rows];
+        for (int[] sh : plan) {
+            int r0 = sh[0], side = sh[1], out = sh[2], h = sh[3];
+            if (r0 < 2 || r0 + h >= rows) continue;
+            float base = side < 0 ? Math.max(left[r0 - 1], left[r0 - 2]) : Math.min(right[r0 - 1], right[r0 - 2]);
+            float tip = base - side * out;
+            for (int k = r0; k < r0 + h; k++) {
+                if (side < 0) left[k] = Math.max(left[k], Math.min(tip, right[k] - MIN_GAP));
+                else right[k] = Math.min(right[k], Math.max(tip, left[k] + MIN_GAP));
+                left[k] = (float) Math.ceil(left[k] / STEP) * STEP;
+                right[k] = (float) Math.floor(right[k] / STEP) * STEP;
+            }
+            float realTip = side < 0 ? left[r0] : right[r0];
+            shelfTopRow[r0] = true;
+            shelves.add(new Shelf(r0 * ROW, side, base, realTip));
+        }
+    }
+
+    public java.util.List<Shelf> shelves() {
+        return shelves;
+    }
+
+    /** True for the top row of a shelf (drawn with a lighter top). */
+    public boolean isShelfTop(float y) {
+        return shelfTopRow[row(y)];
     }
 
     /** Smooth values in -1..1, one per row: random points every 8 rows, eased between. */

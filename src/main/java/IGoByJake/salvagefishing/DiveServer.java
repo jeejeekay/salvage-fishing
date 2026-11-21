@@ -183,26 +183,46 @@ public final class DiveServer {
         if (groups.isEmpty()) return; // nothing down there: leave it as normal fishing
         List<Group> list = new ArrayList<>(groups.values());
 
-        // Lay them out down the shaft: uneven gaps (32 to 96, one per 64 on average), never closer than 32 so two
-        // can't overlap even while swimming past each other. Common catches swim back and forth across
-        // a stretch of the shaft; rare ones (treasure-like: under 2.5% of the rolls, enchanted, or not common
-        // rarity) sit still.
+        // Treasure-like catches (under 2.5% of the rolls, enchanted, or not common rarity; never anything in
+        // #minecraft:fishes) rest on the rock shelves. Everything else swims back and forth in the open water,
+        // with uneven gaps (32 to 96, one per 64 on average), never closer than 32 to another catch.
+        final int rolls = total;
+        java.util.function.Predicate<Group> treasure = g -> {
+            ItemStack st = g.stacks.get(0);
+            return !st.is(net.minecraft.tags.ItemTags.FISHES) && (st.isEnchanted()
+                    || st.getRarity() != net.minecraft.world.item.Rarity.COMMON || g.count < rolls * 0.025F);
+        };
+        List<Group> treasures = new ArrayList<>(), swimmers = new ArrayList<>();
+        for (Group g : list) (treasure.test(g) ? treasures : swimmers).add(g);
+        if (swimmers.isEmpty()) swimmers = list; // a table of only rare things: let them swim
+
         List<Entry> entries = new ArrayList<>();
         List<float[]> pos = new ArrayList<>();
+        List<Float> taken = new ArrayList<>();
+        for (DiveCourse.Shelf sh : course.shelves()) {
+            if (treasures.isEmpty() || !sh.roomy()) continue;
+            float iy = sh.top() - 12;
+            float lo = Math.min(sh.base(), sh.tip()) + 12, hi = Math.max(sh.base(), sh.tip()) - 12;
+            float x = lo + r.nextFloat() * (hi - lo);
+            ItemStack st = pick(treasures, iy / DiveCourse.DEPTH, r);
+            entries.add(new Entry(st, x, iy));
+            pos.add(new float[]{x, iy, 0, 0, 0, 0});
+            taken.add(iy);
+        }
         float y = 110 + r.nextInt(50);
         while (y < DiveCourse.DEPTH - 24) {
             float frac = y / DiveCourse.DEPTH;
             float iy = y;
+            boolean clear = true;
+            for (float t : taken) if (Math.abs(t - iy) < MIN_SPACING) clear = false;
             float lo = course.leftMax(iy - 14, iy + 14) + 14, hi = course.rightMin(iy - 14, iy + 14) - 14;
-            if (hi > lo) {
-                ItemStack st = pick(list, frac, r);
-                boolean still = st.isEnchanted() || st.getRarity() != net.minecraft.world.item.Rarity.COMMON
-                        || groups.get(st.getItem()).count < total * 0.025F;
-                float range = still ? 0 : Math.min((hi - lo) / 2F, 12 + r.nextFloat() * 40);
+            if (clear && hi > lo) {
+                ItemStack st = pick(swimmers, frac, r);
+                float range = Math.min((hi - lo) / 2F, 12 + r.nextFloat() * 40);
                 float centre = lo + range + r.nextFloat() * (hi - lo - 2 * range);
-                float speed = still ? 0 : 14 + r.nextFloat() * 26;
+                float speed = 14 + r.nextFloat() * 26;
                 entries.add(new Entry(st, centre, iy));
-                pos.add(new float[]{centre, iy, range, speed, r.nextFloat(), still ? 0 : 1});
+                pos.add(new float[]{centre, iy, range, speed, r.nextFloat(), 1});
             }
             y += MIN_SPACING + r.nextInt(65);
         }
