@@ -66,6 +66,7 @@ public final class DiveServer {
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
     private static final Map<UUID, int[]> PENDING = new HashMap<>(); // bobber id, ticks settled
     private static int nextId = 1;
+    private static final org.slf4j.Logger LOG = com.mojang.logging.LogUtils.getLogger();
 
     record Entry(ItemStack stack, float x, float y) {
     }
@@ -95,9 +96,10 @@ public final class DiveServer {
         Session s = SESSIONS.get(id);
         if (s != null) {
             long max = (long) ((DiveCourse.DEPTH / DiveCourse.SPEED + 40) * 20);
-            if (s.hook.isRemoved() || player.fishing != s.hook || player.level().getGameTime() - s.startTick > max) {
-                end(player, s, true);
-            }
+            String why = s.hook.isRemoved() ? "the bobber was removed"
+                    : player.fishing != s.hook ? "the player's bobber changed"
+                    : player.level().getGameTime() - s.startTick > max ? "timed out" : null;
+            if (why != null) end(player, s, true, why);
             return;
         }
         FishingHook hook = player.fishing;
@@ -241,19 +243,39 @@ public final class DiveServer {
     /** What the client reports: 0 = caught entry {@code index}, 1 = hit the rock or ran out of line, 2 = reeled in. */
     public static void onResult(ServerPlayer player, int sessionId, int kind, int index) {
         Session s = SESSIONS.get(player.getUUID());
-        if (s == null || s.id != sessionId) return;
+        if (s == null || s.id != sessionId) {
+            if (kind == 0) refuse(player, s == null ? "the dive had already ended on the server (" + lastEnd.getOrDefault(player.getUUID(), "unknown") + ")"
+                    : "it was for an older dive");
+            return;
+        }
         SESSIONS.remove(player.getUUID());
-        if (kind == 0 && index >= 0 && index < s.entries.size() && !s.hook.isRemoved()) {
-            Entry e = s.entries.get(index);
-            float seconds = (player.level().getGameTime() - s.startTick) / 20F;
-            float earliest = (e.y() - 30) / DiveCourse.SPEED * 0.75F - 1F;
-            if (seconds >= earliest) award(player, s, e.stack().copy());
+        if (kind == 0) {
+            if (index < 0 || index >= s.entries.size()) refuse(player, "no such catch (" + index + ")");
+            else {
+                Entry e = s.entries.get(index);
+                float seconds = (player.level().getGameTime() - s.startTick) / 20F;
+                float earliest = e.y() / DiveCourse.SPEED * 0.3F - 2F; // a loose sanity check only
+                if (seconds < earliest) refuse(player, String.format("too early (%.1f s, needs %.1f s)", seconds, earliest));
+                else award(player, s, e.stack().copy());
+            }
         }
         if (!s.hook.isRemoved()) s.hook.discard();
     }
 
-    private static void end(ServerPlayer player, Session s, boolean tell) {
+    /** Why the last dive ended on the server, for the message when a late catch arrives. */
+    private static final Map<UUID, String> lastEnd = new HashMap<>();
+
+    /** A catch that didn't pay out: tell the player why (and log it), so problems can be reported. */
+    private static void refuse(ServerPlayer player, String why) {
+        LOG.warn("Salvage Fishing: {}'s catch was not given: {}", player.getGameProfile().getName(), why);
+        player.displayClientMessage(net.minecraft.network.chat.Component.literal("[Salvage Fishing] Catch not given: " + why)
+                .withStyle(net.minecraft.ChatFormatting.GRAY), false);
+    }
+
+    private static void end(ServerPlayer player, Session s, boolean tell, String why) {
         SESSIONS.remove(player.getUUID());
+        lastEnd.put(player.getUUID(), why);
+        LOG.info("Salvage Fishing: {}'s dive ended on the server: {}", player.getGameProfile().getName(), why);
         if (!s.hook.isRemoved()) s.hook.discard();
         if (tell) DiveNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new EndDivePacket(s.id));
     }
@@ -262,7 +284,11 @@ public final class DiveServer {
         ServerLevel level = player.serverLevel();
         FishingHook hook = s.hook;
         ItemStack rod = rodOf(player);
-        if (rod.isEmpty()) return;
+        if (rod.isEmpty()) {
+            refuse(player, "no fishing rod in hand");
+            return;
+        }
+        if (hook.isRemoved()) refuse(player, "the bobber was already gone (giving the catch anyway)");
         LootParams params = new LootParams.Builder(level)
                 .withParameter(LootContextParams.ORIGIN, hook.position())
                 .withParameter(LootContextParams.TOOL, rod)
@@ -272,11 +298,20 @@ public final class DiveServer {
         LootContext ctx = new LootContext.Builder(params).create(null);
         ObjectArrayList<ItemStack> loot = new ObjectArrayList<>();
         loot.add(stack);
+        ItemStack original = stack.copy();
         loot = ForgeHooks.modifyLoot(CATCH_ID, loot, ctx);
+        if (loot.stream().allMatch(ItemStack::isEmpty)) {
+            refuse(player, "a loot modifier emptied it (giving the original)");
+            loot = new ObjectArrayList<>();
+            loot.add(original);
+        }
 
         ItemFishedEvent event = new ItemFishedEvent(loot, 1, hook);
         MinecraftForge.EVENT_BUS.post(event);
-        if (event.isCanceled()) return;
+        if (event.isCanceled()) {
+            refuse(player, "another mod cancelled the catch");
+            return;
+        }
         CriteriaTriggers.FISHING_ROD_HOOKED.trigger(player, rod, hook, loot);
         for (ItemStack st : loot) {
             if (st.isEmpty()) continue;

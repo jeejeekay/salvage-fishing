@@ -67,7 +67,7 @@ public class DiveScreen extends Screen {
     private boolean left, right, dragging;
     private double mouseXNow;
     private float lastJig = -10F, lastTap = -10F;
-    private int chain, lastTapDir, pendingJig;
+    private int chain, lastTapDir, pendingJig, lastJigDir;
     // The line: its top end follows the hook loosely; a jig yanks it sideways and makes it bow.
     private float lineTop, lineTopV, bend, bendV, hookAngle;
 
@@ -194,10 +194,11 @@ public class DiveScreen extends Screen {
         return u < 2 * p[2];
     }
 
-    /** A key tap toward dir: the first jig needs a double tap; while a jig is live, every tap jigs. */
+    /** A key tap toward dir: the first jig needs a double tap; while a jig is live, every tap the same way jigs
+     *  again. A tap the other way doesn't: it just steers against the jig (a double tap jigs back). */
     private void tap(int dir) {
         if (state != State.PLAY) return;
-        boolean live = chain > 0 && time - lastJig <= JIG_CHAIN;
+        boolean live = chain > 0 && time - lastJig <= JIG_CHAIN && dir == lastJigDir;
         boolean doubleTap = dir == lastTapDir && time - lastTap <= DOUBLE_TAP;
         lastTap = time;
         lastTapDir = dir;
@@ -216,6 +217,8 @@ public class DiveScreen extends Screen {
         chain = time - lastJig <= JIG_CHAIN ? chain + 1 : 1;
         float size = JIG;
         // Keeps the hook's momentum going the same way; going the other way, the jig replaces it.
+        if (dir != lastJigDir) chain = 1;
+        lastJigDir = dir;
         vx = vx * dir > 0 ? dir * Math.min(JIG_MAX, Math.abs(vx) + JIG) : dir * JIG;
         lastJig = time;
         pendingJig = 0;
