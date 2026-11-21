@@ -24,11 +24,12 @@ import java.util.Random;
  * The dive. The hook sinks at a steady pace down a shaft between rock walls; steer it left and right.
  * <ul>
  *   <li>Hold A/D (or the strafe or arrow keys): a slow drift that way.</li>
- *   <li>Jig: a sideways jerk on the line, like a flappy-bird hop. Double-tap A/D to jig; while the jig is live
- *       (within {@link #JIG_CHAIN} s of the last one) each single tap jigs again, and each jig in a row is bigger.
- *       Jigs are at least {@link #JIG_COOLDOWN} s apart (an early tap is held until then).</li>
- *   <li>Hold the left mouse button: the hook drifts toward the cursor when it's within reach of the hook (an arrow
- *       shows the pull); further away, the hook jigs toward it until it's in reach.</li>
+ *   <li>Jig: a sideways jerk on the line, like a flappy-bird hop. It adds to the hook's speed if it's already going
+ *       that way, and replaces it if it's going the other way. Double-tap A/D to jig; while the jig is live (within
+ *       {@link #JIG_CHAIN} s of the last one) each single tap jigs again. Jigs are at least {@link #JIG_COOLDOWN} s
+ *       apart (an early tap is held until then).</li>
+ *   <li>Hold the left mouse button: the hook drifts toward the cursor, at full speed from {@link #DRAG_RANGE} px
+ *       away; past {@link #JIG_RANGE} px it jigs toward it instead.</li>
  *   <li>Touching anything snags it: the catch races up on a wave and the screen closes. Hitting rock, or running
  *       out of line at the bottom, ends with nothing. Right-click (or Esc) reels in straight away.</li>
  * </ul>
@@ -39,10 +40,12 @@ import java.util.Random;
 public class DiveScreen extends Screen {
     /** Drift: top speed and how fast it's reached; water drag on anything faster. */
     private static final float DRIFT_V = 38F, DRIFT_ACCEL = 110F, DRAG = 2.4F, STOP = 60F;
-    /** Jig sizes in a row (sideways speed), the gap between jigs, and how long a jig stays live for chaining. */
-    private static final float[] JIG = {70F, 105F, 130F, 145F};
+    /** A jig's push (sideways speed), the most sideways speed jigs can build, the gap between jigs, and how long
+     *  a jig stays live so single taps keep jigging. */
+    private static final float JIG = 80F, JIG_MAX = 170F;
     private static final float JIG_COOLDOWN = 0.5F, JIG_CHAIN = 0.75F, DOUBLE_TAP = 0.3F;
-    private static final int DRAG_RANGE = 50;
+    /** Mouse: full drift speed at this distance from the hook; a jig past this plus 10%. */
+    private static final float DRAG_RANGE = 25F, JIG_RANGE = DRAG_RANGE * 1.1F;
     private static final float HOOK_R = 5F, ITEM_R = 11F;
     private static final ResourceLocation HOOK = new ResourceLocation("salvagefishing", "textures/gui/hook.png");
     private static final float START_DEPTH = -40F;
@@ -211,13 +214,14 @@ public class DiveScreen extends Screen {
 
     private void jig(int dir) {
         chain = time - lastJig <= JIG_CHAIN ? chain + 1 : 1;
-        float size = JIG[Math.min(chain, JIG.length) - 1];
-        vx = dir * size;
+        float size = JIG;
+        // Keeps the hook's momentum going the same way; going the other way, the jig replaces it.
+        vx = vx * dir > 0 ? dir * Math.min(JIG_MAX, Math.abs(vx) + JIG) : dir * JIG;
         lastJig = time;
         pendingJig = 0;
         lineTopV += dir * size * 1.4F;  // the line is yanked first...
         bendV += dir * size * 2.2F;     // ...and bows with it
-        sound(SoundEvents.FISHING_BOBBER_THROW, 1.4F + Math.min(chain, 4) * 0.1F);
+        sound(SoundEvents.FISHING_BOBBER_THROW, 1.5F);
     }
 
     private void step(float dt) {
@@ -234,10 +238,10 @@ public class DiveScreen extends Screen {
         if (dir != 0) target = dir * DRIFT_V;
         else if (dragging) {
             float dx = (float) (mouseXNow - sx(hookX));
-            if (Math.abs(dx) > DRAG_RANGE) {
-                if (canJig() && vx * Math.signum(dx) < JIG[0] * 0.6F) jig((int) Math.signum(dx));
+            if (Math.abs(dx) > JIG_RANGE) {
+                if (canJig()) jig((int) Math.signum(dx));
             } else {
-                target = dx / DRAG_RANGE * DRIFT_V;
+                target = Mth.clamp(dx / DRAG_RANGE, -1F, 1F) * DRIFT_V;
             }
         }
         boolean fast = Math.abs(vx) > DRIFT_V + 1;
@@ -483,10 +487,11 @@ public class DiveScreen extends Screen {
         g.pose().popPose();
         if (dragging && state == State.PLAY) {
             int dx = (int) Math.round(mouseXNow - hx);
-            int pull = Mth.clamp(dx, -DRAG_RANGE, DRAG_RANGE);
+            int reach = Math.round(JIG_RANGE);
+            int pull = Mth.clamp(dx, -reach, reach);
             if (Math.abs(pull) > 2) {
-                float k = Math.abs(pull) / (float) DRAG_RANGE;
-                boolean far = Math.abs(dx) > DRAG_RANGE;
+                float k = Math.min(1F, Math.abs(pull) / DRAG_RANGE);
+                boolean far = Math.abs(dx) > JIG_RANGE;
                 int c = far ? 0xFFFF5A4A : k < 0.5F ? lerp(0xFF7CFC6A, 0xFFFFE25A, k * 2) : lerp(0xFFFFE25A, 0xFFFF8A4A, (k - 0.5F) * 2);
                 int s = Integer.signum(pull), end = hx + pull;
                 g.fill(Math.min(hx, end), hy + 16, Math.max(hx, end), hy + 19, c);
