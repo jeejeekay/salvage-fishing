@@ -60,6 +60,8 @@ import java.util.UUID;
 public final class DiveServer {
     public static final ResourceLocation CATCH_ID = new ResourceLocation(SalvageFishing.MODID, "catch");
     static final int SAMPLES = 200;
+    /** Catches are at least this far apart in depth (each is 24 tall). */
+    static final int MIN_SPACING = 32;
 
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
     private static final Map<UUID, int[]> PENDING = new HashMap<>(); // bobber id, ticks settled
@@ -179,7 +181,8 @@ public final class DiveServer {
         if (groups.isEmpty()) return; // nothing down there: leave it as normal fishing
         List<Group> list = new ArrayList<>(groups.values());
 
-        // Lay them out down the shaft: uneven gaps, sometimes clusters. Common catches swim back and forth across
+        // Lay them out down the shaft: uneven gaps (32 to 96, one per 64 on average), never closer than 32 so two
+        // can't overlap even while swimming past each other. Common catches swim back and forth across
         // a stretch of the shaft; rare ones (treasure-like: under 2.5% of the rolls, enchanted, or not common
         // rarity) sit still.
         List<Entry> entries = new ArrayList<>();
@@ -187,7 +190,7 @@ public final class DiveServer {
         float y = 110 + r.nextInt(50);
         while (y < DiveCourse.DEPTH - 24) {
             float frac = y / DiveCourse.DEPTH;
-            float iy = y + r.nextInt(24) - 12;
+            float iy = y;
             float lo = course.leftMax(iy - 14, iy + 14) + 14, hi = course.rightMin(iy - 14, iy + 14) - 14;
             if (hi > lo) {
                 ItemStack st = pick(list, frac, r);
@@ -199,8 +202,7 @@ public final class DiveServer {
                 entries.add(new Entry(st, centre, iy));
                 pos.add(new float[]{centre, iy, range, speed, r.nextFloat(), still ? 0 : 1});
             }
-            float gap = r.nextFloat() < 0.25F ? 10 + r.nextInt(20) : 34 + r.nextInt(48); // a quarter come in clusters
-            y += gap;
+            y += MIN_SPACING + r.nextInt(65);
         }
 
         Session s = new Session(nextId++, hook, pool, entries, level.getGameTime());

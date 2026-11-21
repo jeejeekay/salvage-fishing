@@ -10,6 +10,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
@@ -42,7 +43,8 @@ public class DiveScreen extends Screen {
     private static final float[] JIG = {70F, 105F, 130F, 145F};
     private static final float JIG_COOLDOWN = 0.5F, JIG_CHAIN = 0.75F, DOUBLE_TAP = 0.3F;
     private static final int DRAG_RANGE = 50;
-    private static final float HOOK_R = 6F, ITEM_R = 11F;
+    private static final float HOOK_R = 5F, ITEM_R = 11F;
+    private static final ResourceLocation HOOK = new ResourceLocation("salvagefishing", "textures/gui/hook.png");
     private static final float START_DEPTH = -40F;
 
     private enum State { PLAY, CATCH, FAIL, DONE }
@@ -459,7 +461,7 @@ public class DiveScreen extends Screen {
         g.pose().translate(0, 0, 250);
         int hx = sx(hookX), hy = hookScreenY;
         // The line: a loose curve from the top of the view to the hook's eye, drawn in single pixels.
-        float x0 = sx(lineTop), y0 = py0, x2 = hx, y2 = hy - 13;
+        float x0 = sx(lineTop), y0 = py0, x2 = hx, y2 = hy - 7;
         float midX = (x0 + x2) / 2F + bend - vx * 0.25F, midY = (y0 + y2) / 2F;
         int steps = Math.max(24, (int) ((y2 - y0) / 2));
         for (int i = 0; i <= steps; i++) {
@@ -475,12 +477,9 @@ public class DiveScreen extends Screen {
         g.pose().translate(x2, y2, 0);
         g.pose().mulPose(com.mojang.math.Axis.ZP.rotation(hookAngle));
         g.pose().translate(-x2, -y2, 0);
-        // A hook drawn in 3-pixel dots: shank, bend and barb.
-        int[][] dots = {{0, -3}, {0, -2}, {0, -1}, {0, 0}, {0, 1}, {-1, 2}, {1, 2}, {-2, 1}, {-2, 0}, {-3, -1}};
-        for (int[] d : dots) g.fill(hx + d[0] * 3 - 2, hy + d[1] * 3 - 2, hx + d[0] * 3 + 2, hy + d[1] * 3 + 2, 0xFF1E2026);
-        for (int[] d : dots) g.fill(hx + d[0] * 3 - 1, hy + d[1] * 3 - 1, hx + d[0] * 3 + 1, hy + d[1] * 3 + 1, 0xFFC8CCD4);
-        g.fill(hx - 3, hy - 16, hx + 3, hy - 10, 0xFF1E2026); // lead weight
-        g.fill(hx - 2, hy - 15, hx + 2, hy - 11, 0xFF9A9EA8);
+        // The hook sprite (16x16), its eye at the line's end.
+        g.pose().translate(x2 - 7.5F, y2 - 1.5F, 0);
+        g.blit(HOOK, 0, 0, 0F, 0F, 16, 16, 16, 16);
         g.pose().popPose();
         if (dragging && state == State.PLAY) {
             int dx = (int) Math.round(mouseXNow - hx);
