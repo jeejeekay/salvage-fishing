@@ -14,9 +14,11 @@ public final class DiveCourse {
     /** How fast the hook sinks, per second. */
     public static final float SPEED = 38F;
     /** Wall rows are this tall: blocky, like the game. */
-    public static final int ROW = 8;
+    public static final int ROW = 16;
+    /** Walls step sideways in blocks this wide. */
+    public static final int STEP = 8;
     /** Narrowest gap the walls ever leave. */
-    public static final int MIN_GAP = 44;
+    public static final int MIN_GAP = 56;
 
     private final float[] left, right;
 
@@ -31,17 +33,17 @@ public final class DiveCourse {
         int y = 150 + r.nextInt(60);
         while (y < DEPTH + 200) {
             float frac = Math.min(1F, y / (float) DEPTH);
-            int len = 24 + r.nextInt(36);
-            float depth = 18 + r.nextInt(16) + frac * 22;
+            int len = (2 + r.nextInt(4)) * ROW;
+            float depth = 24 + r.nextInt(24) + frac * 24;
             float[] side = r.nextBoolean() ? ledgeL : ledgeR;
             for (int i = 0; i * ROW < len; i++) {
                 int row = y / ROW + i;
                 if (row >= rows) break;
                 float t = (i + 0.5F) * ROW / len;
                 float shape = 1F - (float) Math.pow(Math.abs(2F * t - 1F), 1.6F);
-                side[row] = Math.max(side[row], Math.round(depth * shape / 4F) * 4F);
+                side[row] = Math.max(side[row], Math.round(depth * shape / STEP) * STEP);
             }
-            y += 100 + r.nextInt(90) - (int) (frac * 30);
+            y += 90 + r.nextInt(110) - (int) (frac * 30);
         }
         float edge = WIDTH / 2F - 4F;
         for (int i = 0; i < rows; i++) {
@@ -60,14 +62,14 @@ public final class DiveCourse {
                 if (l < -edge) { rr += -edge - l; l = -edge; }
                 if (rr > edge) { l -= rr - edge; rr = edge; }
             }
-            left[i] = Math.round(l / 2F) * 2F;
-            right[i] = Math.round(rr / 2F) * 2F;
+            left[i] = (float) Math.ceil(l / STEP) * STEP;
+            right[i] = (float) Math.floor(rr / STEP) * STEP;
         }
     }
 
     /** Smooth values in -1..1, one per row: random points every 8 rows, eased between. */
     private static float[] noise(Random r, int rows) {
-        int step = 8;
+        int step = 5;
         float[] pts = new float[rows / step + 2];
         for (int i = 0; i < pts.length; i++) pts[i] = r.nextFloat() * 2F - 1F;
         float[] out = new float[rows];

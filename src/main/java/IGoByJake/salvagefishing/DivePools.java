@@ -28,19 +28,24 @@ import java.util.Map;
  * Optional: {@code "hook"} (only bobbers of this entity type, e.g. a mod's lava bobber), {@code "direct": true}
  * (catches go straight to the inventory instead of flying out, for liquids that would burn them).
  * If {@code <loot_table>/<dimension namespace>/<dimension path>} exists it is used in that dimension instead.
- * Themes: {@code water}, {@code lava}.
+ * Themes: {@code water}, {@code lava}. Any theme's colours can be set with {@code "colors"}: an object with any of
+ * {@code sky, top, mid, bottom, foam, light, deep, bubble} as {@code "#RRGGBB"} or {@code "#AARRGGBB"} (top/mid/bottom
+ * are the water from surface to floor; foam/light/deep are the waves; the rock is always a dark silhouette).
  */
 public final class DivePools {
     private static final Logger LOG = LogUtils.getLogger();
 
     public record Pool(@Nullable TagKey<Fluid> tag, @Nullable Fluid fluid, ResourceLocation table, String theme,
-                       @Nullable ResourceLocation hook, boolean direct) {
+                       @Nullable ResourceLocation hook, boolean direct, int[] colors) {
         boolean matches(FluidState state, FishingHook entity) {
             if (state.isEmpty()) return false;
             if (hook != null && !hook.equals(ForgeRegistries.ENTITY_TYPES.getKey(entity.getType()))) return false;
             return tag != null ? state.is(tag) : state.getType().isSame(fluid);
         }
     }
+
+    /** The colour keys, in the order they're sent to the client. */
+    public static final String[] COLOR_KEYS = {"sky", "top", "mid", "bottom", "foam", "light", "deep", "bubble"};
 
     private static List<Pool> pools = List.of();
 
@@ -81,8 +86,18 @@ public final class DivePools {
                     else fluid = ForgeRegistries.FLUIDS.getValue(new ResourceLocation(f));
                     if (tag == null && fluid == null) return;
                     ResourceLocation hook = o.has("hook") ? new ResourceLocation(GsonHelper.getAsString(o, "hook")) : null;
+                    int[] colors = new int[COLOR_KEYS.length]; // 0 = theme's own
+                    if (o.has("colors")) {
+                        JsonObject c = GsonHelper.getAsJsonObject(o, "colors");
+                        for (int i = 0; i < COLOR_KEYS.length; i++) {
+                            if (!c.has(COLOR_KEYS[i])) continue;
+                            String hex = GsonHelper.getAsString(c, COLOR_KEYS[i]).replace("#", "");
+                            long v = Long.parseLong(hex, 16);
+                            colors[i] = (int) (hex.length() <= 6 ? v | 0xFF000000L : v);
+                        }
+                    }
                     out.add(new Pool(tag, fluid, new ResourceLocation(GsonHelper.getAsString(o, "loot_table")),
-                            GsonHelper.getAsString(o, "theme", "water"), hook, GsonHelper.getAsBoolean(o, "direct", false)));
+                            GsonHelper.getAsString(o, "theme", "water"), hook, GsonHelper.getAsBoolean(o, "direct", false), colors));
                 } catch (RuntimeException ex) {
                     LOG.error("Bad dive pool {}: {}", id, ex.getMessage());
                 }

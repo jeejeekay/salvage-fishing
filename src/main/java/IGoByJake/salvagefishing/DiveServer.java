@@ -166,46 +166,48 @@ public final class DiveServer {
                 .withLuck(luck(player, rod))
                 .create(LootContextParamSets.FISHING);
         Map<Item, Group> groups = new LinkedHashMap<>();
+        int total = 0;
         for (int i = 0; i < SAMPLES; i++) {
             for (ItemStack st : table.getRandomItems(params)) {
                 if (st.isEmpty()) continue;
                 Group g = groups.computeIfAbsent(st.getItem(), k -> new Group());
                 g.count++;
+                total++;
                 if (g.stacks.size() < 8) g.stacks.add(st.copy());
             }
         }
         if (groups.isEmpty()) return; // nothing down there: leave it as normal fishing
         List<Group> list = new ArrayList<>(groups.values());
 
-        // Lay them out down the shaft.
+        // Lay them out down the shaft: uneven gaps, sometimes clusters. Common catches swim back and forth across
+        // a stretch of the shaft; rare ones (treasure-like: under 2.5% of the rolls, enchanted, or not common
+        // rarity) sit still.
         List<Entry> entries = new ArrayList<>();
-        float y = 130 + r.nextInt(30);
-        while (y < DiveCourse.DEPTH - 30) {
+        List<float[]> pos = new ArrayList<>();
+        float y = 110 + r.nextInt(50);
+        while (y < DiveCourse.DEPTH - 24) {
             float frac = y / DiveCourse.DEPTH;
-            float l = course.leftMax(y - 14, y + 14) + 16, rr = course.rightMin(y - 14, y + 14) - 16;
-            if (rr - l >= 4) {
-                int n = (rr - l > 84 && r.nextFloat() < 0.4F) ? 2 : 1;
-                if (n == 1) {
-                    entries.add(new Entry(pick(list, frac, r), l + r.nextFloat() * (rr - l), y));
-                } else {
-                    float a = l + r.nextFloat() * (rr - l) * 0.3F;
-                    float b = rr - r.nextFloat() * (rr - l) * 0.3F;
-                    entries.add(new Entry(pick(list, frac, r), a, y + r.nextInt(10) - 5));
-                    entries.add(new Entry(pick(list, frac, r), b, y + r.nextInt(10) - 5));
-                }
+            float iy = y + r.nextInt(24) - 12;
+            float lo = course.leftMax(iy - 14, iy + 14) + 14, hi = course.rightMin(iy - 14, iy + 14) - 14;
+            if (hi > lo) {
+                ItemStack st = pick(list, frac, r);
+                boolean still = st.isEnchanted() || st.getRarity() != net.minecraft.world.item.Rarity.COMMON
+                        || groups.get(st.getItem()).count < total * 0.025F;
+                float range = still ? 0 : Math.min((hi - lo) / 2F, 12 + r.nextFloat() * 40);
+                float centre = lo + range + r.nextFloat() * (hi - lo - 2 * range);
+                float speed = still ? 0 : 14 + r.nextFloat() * 26;
+                entries.add(new Entry(st, centre, iy));
+                pos.add(new float[]{centre, iy, range, speed, r.nextFloat(), still ? 0 : 1});
             }
-            y += 64 + r.nextInt(64);
+            float gap = r.nextFloat() < 0.25F ? 10 + r.nextInt(20) : 34 + r.nextInt(48); // a quarter come in clusters
+            y += gap;
         }
 
         Session s = new Session(nextId++, hook, pool, entries, level.getGameTime());
         SESSIONS.put(player.getUUID(), s);
         List<ItemStack> stacks = new ArrayList<>();
-        List<float[]> pos = new ArrayList<>();
-        for (Entry e : entries) {
-            stacks.add(e.stack());
-            pos.add(new float[]{e.x(), e.y(), r.nextFloat() * 8F, r.nextFloat() * 6.28F});
-        }
-        DiveNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new StartDivePacket(s.id, seed, pool.theme(), stacks, pos));
+        for (Entry e : entries) stacks.add(e.stack());
+        DiveNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new StartDivePacket(s.id, seed, pool.theme(), pool.colors(), stacks, pos));
         level.playSound(null, hook.getX(), hook.getY(), hook.getZ(), SoundEvents.FISHING_BOBBER_SPLASH, SoundSource.NEUTRAL, 0.6F, 0.8F);
     }
 

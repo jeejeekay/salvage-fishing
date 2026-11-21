@@ -10,7 +10,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
@@ -30,12 +29,14 @@ import java.util.Random;
  *   <li>Touching anything snags it: the catch races up on a wave and the screen closes. Hitting rock, or running
  *       out of line at the bottom, ends with nothing. Right-click (or Esc) reels in straight away.</li>
  * </ul>
- * It gets darker the deeper you go, with a little light round the hook.
+ * It gets darker the deeper you go, with a little light round the hook. When the floor comes into view the view
+ * stops and the hook sinks on to it. Rock is drawn as dark silhouettes over the pool's colours, so any liquid can
+ * have its own look with no textures.
  */
 public class DiveScreen extends Screen {
     private static final float MAX_V = 85F, ACCEL = 380F, COUNTER = 1500F, FRICTION = 240F, DRAG_ACCEL = 420F;
     private static final int DRAG_RANGE = 50;
-    private static final float HOOK_R = 3F, ITEM_R = 11F;
+    private static final float HOOK_R = 6F, ITEM_R = 11F;
     private static final float START_DEPTH = -40F;
 
     private enum State { PLAY, CATCH, FAIL, DONE }
@@ -60,7 +61,7 @@ public class DiveScreen extends Screen {
         this.id = p.id();
         this.seed = p.seed();
         this.course = new DiveCourse(p.seed());
-        this.theme = Theme.of(p.theme());
+        this.theme = Theme.of(p.theme(), p.colors());
         this.stacks = p.stacks();
         this.pos = p.pos();
     }
@@ -152,11 +153,23 @@ public class DiveScreen extends Screen {
 
     // ---- simulation ----------------------------------------------------------------------------------------
 
+    /** Where entry i is at time t: swimmers go back and forth across their stretch at a steady speed. */
     private float itemX(int i, float t) {
         float[] p = pos.get(i);
-        float x = p[0] + p[2] * Mth.sin(t * 0.9F + p[3]);
-        float lo = course.leftMax(p[1] - 10, p[1] + 10) + ITEM_R + 1, hi = course.rightMin(p[1] - 10, p[1] + 10) - ITEM_R - 1;
-        return lo < hi ? Mth.clamp(x, lo, hi) : p[0];
+        float range = p[2], speed = p[3];
+        if (p[5] == 0 || range <= 0 || speed <= 0) return p[0];
+        float lap = 4 * range;
+        float u = ((t * speed + p[4] * lap) % lap + lap) % lap;
+        return p[0] + (u < 2 * range ? u - range : 3 * range - u);
+    }
+
+    /** True while entry i swims left (it's drawn flipped then). */
+    private boolean facingLeft(int i, float t) {
+        float[] p = pos.get(i);
+        if (p[5] == 0 || p[2] <= 0 || p[3] <= 0) return false;
+        float lap = 4 * p[2];
+        float u = ((t * p[3] + p[4] * lap) % lap + lap) % lap;
+        return u >= 2 * p[2];
     }
 
     private void step(float dt) {
@@ -178,7 +191,7 @@ public class DiveScreen extends Screen {
         hookX = Mth.clamp(hookX + vx * dt, -DiveCourse.WIDTH / 2F + HOOK_R, DiveCourse.WIDTH / 2F - HOOK_R);
         depth += DiveCourse.SPEED * dt;
 
-        if (depth >= DiveCourse.DEPTH) { fail(); return; }
+        if (depth + HOOK_R >= DiveCourse.DEPTH) { fail(); return; }
         if (depth > 0) {
             float l = course.leftMax(depth - HOOK_R, depth + HOOK_R), r = course.rightMin(depth - HOOK_R, depth + HOOK_R);
             if (hookX - HOOK_R < l || hookX + HOOK_R > r) { fail(); return; }
@@ -208,13 +221,15 @@ public class DiveScreen extends Screen {
     // ---- drawing -------------------------------------------------------------------------------------------
 
     private int px0, py0, pw, ph, hookScreenY;
+    /** The world depth at the top of the view: follows the hook, but stops once the floor is 80% down the view. */
+    private float camTop;
 
     private int sx(float x) {
         return px0 + pw / 2 + Math.round(x);
     }
 
     private int sy(float y) {
-        return hookScreenY + Math.round(y - depth);
+        return py0 + Math.round(y - camTop);
     }
 
     @Override
@@ -229,7 +244,8 @@ public class DiveScreen extends Screen {
         ph = Math.max(140, this.height - 44);
         px0 = (this.width - pw) / 2;
         py0 = (this.height - ph) / 2 - 4;
-        hookScreenY = py0 + Math.round(ph * 0.3F);
+        camTop = Math.min(depth - ph * 0.3F, DiveCourse.DEPTH - ph * 0.8F);
+        hookScreenY = sy(depth);
 
         g.enableScissor(px0, py0, px0 + pw, py0 + ph);
         drawWater(g);
@@ -250,7 +266,7 @@ public class DiveScreen extends Screen {
     private void drawWater(GuiGraphics g) {
         int top = py0, bottom = py0 + ph;
         for (int y = top; y < bottom; y += 4) {
-            float wy = depth + (y - hookScreenY);
+            float wy = camTop + (y - py0);
             int c;
             if (wy < 0) c = theme.sky;
             else {
@@ -291,28 +307,38 @@ public class DiveScreen extends Screen {
         }
     }
 
-    private ResourceLocation rock(float wy) {
-        float f = wy / DiveCourse.DEPTH;
-        return f < 0.34F ? theme.rock1 : f < 0.68F ? theme.rock2 : theme.rock3;
-    }
-
+    /** Rock as a dark silhouette, block by block, with a darker rim; and the floor. */
     private void drawWalls(GuiGraphics g) {
         int top = py0, bottom = py0 + ph;
-        float first = depth + (top - hookScreenY), last = depth + (bottom - hookScreenY);
+        float first = camTop, last = camTop + ph;
         int r0 = (int) Math.floor(Math.max(0, first) / DiveCourse.ROW), r1 = (int) Math.ceil(last / DiveCourse.ROW);
+        int body = 0xD8060810, rim = 0xF0000000;
         for (int row = r0; row <= r1; row++) {
             float wy = row * DiveCourse.ROW;
+            if (wy >= DiveCourse.DEPTH) break;
             int y = sy(wy), y2 = y + DiveCourse.ROW;
             int l = sx(course.left(wy)), r = sx(course.right(wy));
-            ResourceLocation tex = rock(wy);
-            int v = Math.floorMod((int) wy, 16);
+            int lp = sx(course.left(wy - DiveCourse.ROW)), rp = sx(course.right(wy - DiveCourse.ROW));
             if (l > px0) {
-                g.blit(tex, px0, y, 0F, (float) v, l - px0, DiveCourse.ROW, 16, 16);
-                g.fill(l - 2, y, l, y2, 0x66000000);
+                g.fill(px0, y, l, y2, body);
+                g.fill(l - 2, y, l, y2, rim);
+                if (row > 0 && lp < l) g.fill(lp, y, l, y + 2, rim); // ledge top
             }
             if (r < px0 + pw) {
-                g.blit(tex, r, y, (float) (r - px0), (float) v, px0 + pw - r, DiveCourse.ROW, 16, 16);
-                g.fill(r, y, r + 2, y2, 0x66000000);
+                g.fill(r, y, px0 + pw, y2, body);
+                g.fill(r, y, r + 2, y2, rim);
+                if (row > 0 && rp > r) g.fill(r, y, rp, y + 2, rim);
+            }
+        }
+        int floor = sy(DiveCourse.DEPTH);
+        if (floor < bottom) {
+            g.fill(px0, floor, px0 + pw, bottom, body);
+            g.fill(px0, floor, px0 + pw, floor + 2, rim);
+            // a few blocky bumps on the floor
+            java.util.Random r = new java.util.Random(seed * 7);
+            for (int x = 0; x < pw; x += DiveCourse.STEP) {
+                int h = r.nextInt(3) * 4;
+                if (h > 0) g.fill(px0 + x, floor - h, px0 + x + DiveCourse.STEP, floor, body);
             }
         }
     }
@@ -325,9 +351,15 @@ public class DiveScreen extends Screen {
             if (y < py0 - 20 || y > py0 + ph + 20) continue;
             int x = sx(itemX(i, time));
             g.pose().pushPose();
-            g.pose().translate(x - 12, y - 12, 0);
-            g.pose().scale(1.5F, 1.5F, 1F);
-            g.renderItem(stacks.get(i), 0, 0);
+            if (facingLeft(i, time)) {
+                // Turned round (a half turn about the vertical, so it stays lit and drawn the right way round).
+                g.pose().translate(x, y, 300);
+                g.pose().scale(-1.5F, 1.5F, -1F);
+            } else {
+                g.pose().translate(x, y, 0);
+                g.pose().scale(1.5F, 1.5F, 1F);
+            }
+            g.renderItem(stacks.get(i), -8, -8);
             g.pose().popPose();
         }
     }
@@ -359,20 +391,22 @@ public class DiveScreen extends Screen {
         g.pose().pushPose();
         g.pose().translate(0, 0, 250);
         int hx = sx(hookX), hy = hookScreenY;
-        g.fill(hx, py0, hx + 1, hy - 6, 0xCCDDDDDD); // the line
+        g.fill(hx, py0, hx + 1, hy - 15, 0xCCDDDDDD); // the line
         // A little hook, two pixels to a dot.
-        int[][] dots = {{0, -6}, {0, -4}, {0, -2}, {0, 0}, {0, 2}, {-2, 4}, {2, 4}, {-4, 2}, {-4, 0}};
-        for (int[] d : dots) g.fill(hx + d[0] - 1, hy + d[1] - 1, hx + d[0] + 1, hy + d[1] + 1, 0xFF2A2C33);
-        for (int[] d : dots) g.fill(hx + d[0] - 1, hy + d[1] - 1, hx + d[0], hy + d[1], 0xFFC8CCD4);
-        g.fill(hx - 2, hy - 9, hx + 2, hy - 5, 0xFF9A9EA8); // lead weight
+        // A hook drawn in 3-pixel dots: shank, bend and barb.
+        int[][] dots = {{0, -3}, {0, -2}, {0, -1}, {0, 0}, {0, 1}, {-1, 2}, {1, 2}, {-2, 1}, {-2, 0}, {-3, -1}};
+        for (int[] d : dots) g.fill(hx + d[0] * 3 - 2, hy + d[1] * 3 - 2, hx + d[0] * 3 + 2, hy + d[1] * 3 + 2, 0xFF1E2026);
+        for (int[] d : dots) g.fill(hx + d[0] * 3 - 1, hy + d[1] * 3 - 1, hx + d[0] * 3 + 1, hy + d[1] * 3 + 1, 0xFFC8CCD4);
+        g.fill(hx - 3, hy - 16, hx + 3, hy - 10, 0xFF1E2026); // lead weight
+        g.fill(hx - 2, hy - 15, hx + 2, hy - 11, 0xFF9A9EA8);
         if (dragging && state == State.PLAY) {
             int pull = (int) Mth.clamp(mouseXNow - anchorX, -DRAG_RANGE, DRAG_RANGE);
             if (Math.abs(pull) > 2) {
                 float k = Math.abs(pull) / (float) DRAG_RANGE;
                 int c = k < 0.5F ? lerp(0xFF7CFC6A, 0xFFFFE25A, k * 2) : lerp(0xFFFFE25A, 0xFFFF5A4A, (k - 0.5F) * 2);
                 int s = Integer.signum(pull), end = hx + pull;
-                g.fill(Math.min(hx, end), hy + 12, Math.max(hx, end), hy + 15, c);
-                for (int i = 0; i < 4; i++) g.fill(end + s * i - (s < 0 ? 1 : 0), hy + 13 - (3 - i), end + s * i + (s > 0 ? 1 : 0), hy + 14 + (3 - i), c);
+                g.fill(Math.min(hx, end), hy + 16, Math.max(hx, end), hy + 19, c);
+                for (int i = 0; i < 4; i++) g.fill(end + s * i - (s < 0 ? 1 : 0), hy + 17 - (3 - i), end + s * i + (s > 0 ? 1 : 0), hy + 18 + (3 - i), c);
             }
         }
         g.pose().popPose();
@@ -474,20 +508,15 @@ public class DiveScreen extends Screen {
         return Math.round(aa + (ba - aa) * t) << 24 | Math.round(ar + (br - ar) * t) << 16 | Math.round(ag + (bg - ag) * t) << 8 | Math.round(ab + (bb - ab) * t);
     }
 
-    /** Colours and rock for each kind of liquid. */
-    private record Theme(boolean lava, int sky, int top, int mid, int bottom, int foam, int light, int deep, int bubble,
-                         ResourceLocation rock1, ResourceLocation rock2, ResourceLocation rock3) {
-        static Theme of(String name) {
-            if ("lava".equals(name)) return new Theme(true, 0xFF2A0E08, 0xFFF07A1E, 0xFFA8360C, 0xFF2A0A04,
-                    0xFFFFF0A0, 0xFFFFB238, 0xFFB8400C, 0xCCFFC850,
-                    block("netherrack"), block("basalt_side"), block("blackstone"));
-            return new Theme(false, 0xFF9CC8F5, 0xFF3F76E4, 0xFF173A8A, 0xFF040A1A,
-                    0xFFEAF6FF, 0xFF6FA8F0, 0xFF2A55B8, 0x99D8ECFF,
-                    block("stone"), block("deepslate"), block("blackstone"));
-        }
-
-        private static ResourceLocation block(String name) {
-            return new ResourceLocation("minecraft", "textures/block/" + name + ".png");
+    /** Colours for each kind of liquid; a pool can set any of them (see DivePools). */
+    private record Theme(boolean lava, int sky, int top, int mid, int bottom, int foam, int light, int deep, int bubble) {
+        static Theme of(String name, int[] custom) {
+            boolean lava = "lava".equals(name);
+            int[] c = lava
+                    ? new int[]{0xFF2A0E08, 0xFFF07A1E, 0xFFA8360C, 0xFF2A0A04, 0xFFFFF0A0, 0xFFFFB238, 0xFFB8400C, 0xCCFFC850}
+                    : new int[]{0xFF9CC8F5, 0xFF3F76E4, 0xFF173A8A, 0xFF040A1A, 0xFFEAF6FF, 0xFF6FA8F0, 0xFF2A55B8, 0x99D8ECFF};
+            for (int i = 0; i < c.length && custom != null && i < custom.length; i++) if (custom[i] != 0) c[i] = custom[i];
+            return new Theme(lava, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]);
         }
     }
 }

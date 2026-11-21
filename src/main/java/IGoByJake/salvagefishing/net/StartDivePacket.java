@@ -11,11 +11,15 @@ import java.util.List;
 import java.util.function.Supplier;
 
 /** Server → client: a dive starts. The shaft's seed (walls), its look, and what's down there (x, y, drift, phase). */
-public record StartDivePacket(int id, long seed, String theme, List<ItemStack> stacks, List<float[]> pos) {
+/** pos per entry: centre x, y, swim range, swim speed, phase (0..1), swims (1) or sits still (0). */
+public record StartDivePacket(int id, long seed, String theme, int[] colors, List<ItemStack> stacks, List<float[]> pos) {
+    public static final int FIELDS = 6;
+
     public static void encode(StartDivePacket p, FriendlyByteBuf buf) {
         buf.writeVarInt(p.id);
         buf.writeLong(p.seed);
         buf.writeUtf(p.theme, 32);
+        buf.writeVarIntArray(p.colors);
         buf.writeVarInt(p.stacks.size());
         for (int i = 0; i < p.stacks.size(); i++) {
             buf.writeItem(p.stacks.get(i));
@@ -27,14 +31,17 @@ public record StartDivePacket(int id, long seed, String theme, List<ItemStack> s
         int id = buf.readVarInt();
         long seed = buf.readLong();
         String theme = buf.readUtf(32);
+        int[] colors = buf.readVarIntArray(16);
         int n = buf.readVarInt();
         List<ItemStack> stacks = new ArrayList<>(n);
         List<float[]> pos = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             stacks.add(buf.readItem());
-            pos.add(new float[]{buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()});
+            float[] f = new float[FIELDS];
+            for (int k = 0; k < FIELDS; k++) f[k] = buf.readFloat();
+            pos.add(f);
         }
-        return new StartDivePacket(id, seed, theme, stacks, pos);
+        return new StartDivePacket(id, seed, theme, colors, stacks, pos);
     }
 
     public static void handle(StartDivePacket p, Supplier<NetworkEvent.Context> ctx) {
