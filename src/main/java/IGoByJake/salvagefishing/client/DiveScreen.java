@@ -516,31 +516,60 @@ public class DiveScreen extends Screen {
         g.pose().translate(x2 - 7.5F, y2 - 1.5F, 0);
         g.blit(HOOK, 0, 0, 0F, 0F, 16, 16, 16, 16);
         g.pose().popPose();
-        if (sink != 1F && state == State.PLAY) {
-            // Fast: chevrons trailing above the hook; slow: below it, pointing up.
-            int dir = sink > 1F ? 1 : -1, c = sink > 1F ? 0xCCFFE25A : 0xCC7CC8FF;
-            for (int k = 0; k < 2; k++) {
-                int cy = hy + (dir > 0 ? -24 - k * 6 : 18 + k * 6);
-                for (int i = 0; i < 3; i++) {
-                    g.fill(hx - 3 + i, cy + dir * i, hx - 2 + i, cy + dir * i + 1, c);
-                    g.fill(hx + 3 - i, cy + dir * i, hx + 4 - i, cy + dir * i + 1, c);
-                }
+        if (state == State.PLAY) {
+            // Fast: chevrons below the hook pointing down; slow: above it pointing up.
+            if (sink != 1F) {
+                int dir = sink > 1F ? 1 : -1, c = sink > 1F ? 0xCCFFE25A : 0xCC7CC8FF;
+                for (int k = 0; k < 2; k++) chevron(g, hx, hy + (dir > 0 ? 14 + k * 6 : -22 - k * 6), 0, dir, c);
             }
-        }
-        if (dragging && state == State.PLAY) {
-            int dx = (int) Math.round(mouseXNow - hx);
-            int reach = Math.round(JIG_RANGE);
-            int pull = Mth.clamp(dx, -reach, reach);
-            if (Math.abs(pull) > 2) {
-                float k = Math.min(1F, Math.abs(pull) / DRAG_RANGE);
-                boolean far = Math.abs(dx) > JIG_RANGE;
+            // Sideways: three chevrons pointing the way the hook is pulled, spreading apart and warming in colour
+            // the harder the pull (red when the mouse is far enough to jig). They flash darker while a jig carries
+            // the hook faster than drift speed, then settle back.
+            int dirX = 0;
+            float k = 0;
+            boolean far = false;
+            if (dragging) {
+                float dx = (float) (mouseXNow - hx);
+                if (Math.abs(dx) > 2) {
+                    dirX = dx > 0 ? 1 : -1;
+                    k = Math.min(1F, Math.abs(dx) / DRAG_RANGE);
+                    far = Math.abs(dx) > JIG_RANGE;
+                }
+            } else if (left != right) {
+                dirX = right ? 1 : -1;
+                k = 1F;
+            }
+            boolean fast = Math.abs(vx) > DRIFT_V + 1;
+            if (dirX == 0 && fast) { // a tap-jig with nothing held: show its direction while it lasts
+                dirX = vx > 0 ? 1 : -1;
+                k = 1F;
+            }
+            if (dirX != 0) {
                 int c = far ? 0xFFFF5A4A : k < 0.5F ? lerp(0xFF7CFC6A, 0xFFFFE25A, k * 2) : lerp(0xFFFFE25A, 0xFFFF8A4A, (k - 0.5F) * 2);
-                int s = Integer.signum(pull), end = hx + pull;
-                g.fill(Math.min(hx, end), hy + 16, Math.max(hx, end), hy + 19, c);
-                for (int i = 0; i < 4; i++) g.fill(end + s * i - (s < 0 ? 1 : 0), hy + 17 - (3 - i), end + s * i + (s > 0 ? 1 : 0), hy + 18 + (3 - i), c);
+                if (fast) {
+                    float dark = Mth.clamp((Math.abs(vx) - DRIFT_V) / (JIG - DRIFT_V), 0F, 1F) * 0.65F;
+                    c = lerp(c, 0xFF1A1A1E, dark);
+                }
+                float gap = 5F + k * 7F + (far ? 3F : 0F);
+                for (int n = 0; n < 3; n++) chevron(g, hx + dirX * Math.round(9 + n * gap), hy + 2, dirX, 0, c);
             }
         }
         g.pose().popPose();
+    }
+
+    /** A small 2-pixel-thick chevron centred on (x, y), pointing along (dx, dy) (one of them 0). */
+    private static void chevron(GuiGraphics g, int x, int y, int dx, int dy, int c) {
+        for (int i = 0; i < 3; i++) {
+            if (dx != 0) { // > or <
+                int px = x + dx * (i - 1);
+                g.fill(px - 1, y - 3 + i, px + 1, y - 2 + i, c);
+                g.fill(px - 1, y + 2 - i, px + 1, y + 3 - i, c);
+            } else {       // v or ^
+                int py = y + dy * (i - 1);
+                g.fill(x - 3 + i, py - 1, x - 2 + i, py + 1, c);
+                g.fill(x + 2 - i, py - 1, x + 3 - i, py + 1, c);
+            }
+        }
     }
 
     /** The catch (or nothing) riding a wave up, then everything sliding away down. */
