@@ -1,0 +1,5 @@
+{
+  "fluid": "#minecraft:water",
+  "loot_table": "minecraft:gameplay/fishing",
+  "theme": "water"
+}
