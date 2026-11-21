@@ -22,10 +22,12 @@ import java.util.Random;
 /**
  * The dive. The hook sinks at a steady pace down a shaft between rock walls; steer it left and right.
  * <ul>
- *   <li>A/D (or the strafe keys, or the arrow keys): accelerate up to top speed; pressing the other way while
- *       moving brakes very hard first (a counter-strafe stop).</li>
- *   <li>Click and drag: an arrow from the hook shows the pull; its stretch sets the speed, and the hook can only
- *       be pulled so fast.</li>
+ *   <li>Hold A/D (or the strafe or arrow keys): a slow drift that way.</li>
+ *   <li>Jig: a sideways jerk on the line, like a flappy-bird hop. Double-tap A/D to jig; while the jig is live
+ *       (within {@link #JIG_CHAIN} s of the last one) each single tap jigs again, and each jig in a row is bigger.
+ *       Jigs are at least {@link #JIG_COOLDOWN} s apart (an early tap is held until then).</li>
+ *   <li>Hold the left mouse button: the hook drifts toward the cursor when it's within reach of the hook (an arrow
+ *       shows the pull); further away, the hook jigs toward it until it's in reach.</li>
  *   <li>Touching anything snags it: the catch races up on a wave and the screen closes. Hitting rock, or running
  *       out of line at the bottom, ends with nothing. Right-click (or Esc) reels in straight away.</li>
  * </ul>
@@ -34,7 +36,11 @@ import java.util.Random;
  * have its own look with no textures.
  */
 public class DiveScreen extends Screen {
-    private static final float MAX_V = 85F, ACCEL = 380F, COUNTER = 1500F, FRICTION = 240F, DRAG_ACCEL = 420F;
+    /** Drift: top speed and how fast it's reached; water drag on anything faster. */
+    private static final float DRIFT_V = 38F, DRIFT_ACCEL = 110F, DRAG = 2.4F, STOP = 60F;
+    /** Jig sizes in a row (sideways speed), the gap between jigs, and how long a jig stays live for chaining. */
+    private static final float[] JIG = {70F, 105F, 130F, 145F};
+    private static final float JIG_COOLDOWN = 0.5F, JIG_CHAIN = 0.75F, DOUBLE_TAP = 0.3F;
     private static final int DRAG_RANGE = 50;
     private static final float HOOK_R = 6F, ITEM_R = 11F;
     private static final float START_DEPTH = -40F;
@@ -54,7 +60,11 @@ public class DiveScreen extends Screen {
     private float animTime;
     private int caught = -1;
     private boolean left, right, dragging;
-    private double anchorX, mouseXNow;
+    private double mouseXNow;
+    private float lastJig = -10F, lastTap = -10F;
+    private int chain, lastTapDir, pendingJig;
+    // The line: its top end follows the hook loosely; a jig yanks it sideways and makes it bow.
+    private float lineTop, lineTopV, bend, bendV, hookAngle;
 
     public DiveScreen(StartDivePacket p) {
         super(Component.translatable("salvagefishing.title"));
@@ -87,8 +97,16 @@ public class DiveScreen extends Screen {
 
     @Override
     public boolean keyPressed(int key, int scan, int mods) {
-        if (isLeft(key, scan)) { left = true; return true; }
-        if (isRight(key, scan)) { right = true; return true; }
+        if (isLeft(key, scan)) {
+            if (!left) tap(-1);
+            left = true;
+            return true;
+        }
+        if (isRight(key, scan)) {
+            if (!right) tap(1);
+            right = true;
+            return true;
+        }
         return super.keyPressed(key, scan, mods);
     }
 
@@ -109,7 +127,6 @@ public class DiveScreen extends Screen {
         }
         if (button == InputConstants.MOUSE_BUTTON_LEFT) {
             dragging = true;
-            anchorX = x;
             mouseXNow = x;
             return true;
         }
@@ -172,23 +189,73 @@ public class DiveScreen extends Screen {
         return u >= 2 * p[2];
     }
 
+    /** A key tap toward dir: the first jig needs a double tap; while a jig is live, every tap jigs. */
+    private void tap(int dir) {
+        if (state != State.PLAY) return;
+        boolean live = chain > 0 && time - lastJig <= JIG_CHAIN;
+        boolean doubleTap = dir == lastTapDir && time - lastTap <= DOUBLE_TAP;
+        lastTap = time;
+        lastTapDir = dir;
+        if (live || doubleTap) {
+            if (time - lastJig >= JIG_COOLDOWN) jig(dir);
+            else pendingJig = dir; // held until the cooldown ends
+            lastTapDir = 0;
+        }
+    }
+
+    private boolean canJig() {
+        return time - lastJig >= JIG_COOLDOWN;
+    }
+
+    private void jig(int dir) {
+        chain = time - lastJig <= JIG_CHAIN ? chain + 1 : 1;
+        float size = JIG[Math.min(chain, JIG.length) - 1];
+        vx = dir * size;
+        lastJig = time;
+        pendingJig = 0;
+        lineTopV += dir * size * 1.4F;  // the line is yanked first...
+        bendV += dir * size * 2.2F;     // ...and bows with it
+        sound(SoundEvents.FISHING_BOBBER_THROW, 1.4F + Math.min(chain, 4) * 0.1F);
+    }
+
     private void step(float dt) {
         time += dt;
-        int dir = (right ? 1 : 0) - (left ? 1 : 0);
-        if (dir != 0) {
-            if (vx * dir < 0) vx += dir * COUNTER * dt;      // braking from the other way: hard stop
-            else vx += dir * ACCEL * dt;
-            vx = Mth.clamp(vx, -MAX_V, MAX_V);
-        } else if (dragging) {
-            float pull = (float) Mth.clamp(mouseXNow - anchorX, -DRAG_RANGE, DRAG_RANGE);
-            float target = pull / DRAG_RANGE * MAX_V;
-            float d = target - vx, max = DRAG_ACCEL * dt;
-            vx += Mth.clamp(d, -max, max);
-        } else {
-            float max = FRICTION * dt;
-            vx -= Mth.clamp(vx, -max, max);
+        if (chain > 0 && time - lastJig > JIG_CHAIN && pendingJig == 0) chain = 0;
+        if (pendingJig != 0 && canJig()) {
+            if (time - lastJig <= JIG_CHAIN + 0.05F) jig(pendingJig);
+            else pendingJig = 0;
         }
-        hookX = Mth.clamp(hookX + vx * dt, -DiveCourse.WIDTH / 2F + HOOK_R, DiveCourse.WIDTH / 2F - HOOK_R);
+
+        // Drift toward the held key, or toward the mouse while it's in reach; jig toward a far-off mouse.
+        int dir = (right ? 1 : 0) - (left ? 1 : 0);
+        float target = Float.NaN;
+        if (dir != 0) target = dir * DRIFT_V;
+        else if (dragging) {
+            float dx = (float) (mouseXNow - sx(hookX));
+            if (Math.abs(dx) > DRAG_RANGE) {
+                if (canJig() && vx * Math.signum(dx) < JIG[0] * 0.6F) jig((int) Math.signum(dx));
+            } else {
+                target = dx / DRAG_RANGE * DRIFT_V;
+            }
+        }
+        boolean fast = Math.abs(vx) > DRIFT_V + 1;
+        if (!Float.isNaN(target) && !(fast && Math.signum(vx) == Math.signum(target))) {
+            float d = target - vx, max = DRIFT_ACCEL * dt;
+            vx += Mth.clamp(d, -max, max);
+        }
+        if (fast || Float.isNaN(target)) {
+            vx *= (float) Math.exp(-DRAG * dt);                       // water drag
+            if (Float.isNaN(target)) vx -= Mth.clamp(vx, -STOP * dt, STOP * dt);
+        }
+        float nx = hookX + vx * dt, edge = DiveCourse.WIDTH / 2F - HOOK_R;
+        if (Math.abs(nx) > edge) vx = 0;
+        hookX = Mth.clamp(nx, -edge, edge);
+
+        // The line's top end trails the hook on a spring; the bow swings and settles.
+        lineTopV += (8F * (hookX - lineTop) - 4F * lineTopV) * dt;
+        lineTop += lineTopV * dt;
+        bendV += (-55F * bend - 5F * bendV) * dt;
+        bend += bendV * dt;
         depth += DiveCourse.SPEED * dt;
 
         if (depth + HOOK_R >= DiveCourse.DEPTH) { fail(); return; }
@@ -391,19 +458,37 @@ public class DiveScreen extends Screen {
         g.pose().pushPose();
         g.pose().translate(0, 0, 250);
         int hx = sx(hookX), hy = hookScreenY;
-        g.fill(hx, py0, hx + 1, hy - 15, 0xCCDDDDDD); // the line
-        // A little hook, two pixels to a dot.
+        // The line: a loose curve from the top of the view to the hook's eye, drawn in single pixels.
+        float x0 = sx(lineTop), y0 = py0, x2 = hx, y2 = hy - 13;
+        float midX = (x0 + x2) / 2F + bend - vx * 0.25F, midY = (y0 + y2) / 2F;
+        int steps = Math.max(24, (int) ((y2 - y0) / 2));
+        for (int i = 0; i <= steps; i++) {
+            float t = i / (float) steps, a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t;
+            int lx = Math.round(a * x0 + b * midX + c * x2), ly = Math.round(a * y0 + b * midY + c * y2);
+            g.fill(lx, ly, lx + 1, ly + 1, 0xCCDDDDDD);
+        }
+        // The hook hangs along the line's last stretch, swinging smoothly.
+        float tx = x2 - midX, ty = y2 - midY;
+        float want = Mth.clamp((float) -Math.atan2(tx, Math.max(4F, ty)), -1.0F, 1.0F);
+        hookAngle += (want - hookAngle) * 0.25F;
+        g.pose().pushPose();
+        g.pose().translate(x2, y2, 0);
+        g.pose().mulPose(com.mojang.math.Axis.ZP.rotation(hookAngle));
+        g.pose().translate(-x2, -y2, 0);
         // A hook drawn in 3-pixel dots: shank, bend and barb.
         int[][] dots = {{0, -3}, {0, -2}, {0, -1}, {0, 0}, {0, 1}, {-1, 2}, {1, 2}, {-2, 1}, {-2, 0}, {-3, -1}};
         for (int[] d : dots) g.fill(hx + d[0] * 3 - 2, hy + d[1] * 3 - 2, hx + d[0] * 3 + 2, hy + d[1] * 3 + 2, 0xFF1E2026);
         for (int[] d : dots) g.fill(hx + d[0] * 3 - 1, hy + d[1] * 3 - 1, hx + d[0] * 3 + 1, hy + d[1] * 3 + 1, 0xFFC8CCD4);
         g.fill(hx - 3, hy - 16, hx + 3, hy - 10, 0xFF1E2026); // lead weight
         g.fill(hx - 2, hy - 15, hx + 2, hy - 11, 0xFF9A9EA8);
+        g.pose().popPose();
         if (dragging && state == State.PLAY) {
-            int pull = (int) Mth.clamp(mouseXNow - anchorX, -DRAG_RANGE, DRAG_RANGE);
+            int dx = (int) Math.round(mouseXNow - hx);
+            int pull = Mth.clamp(dx, -DRAG_RANGE, DRAG_RANGE);
             if (Math.abs(pull) > 2) {
                 float k = Math.abs(pull) / (float) DRAG_RANGE;
-                int c = k < 0.5F ? lerp(0xFF7CFC6A, 0xFFFFE25A, k * 2) : lerp(0xFFFFE25A, 0xFFFF5A4A, (k - 0.5F) * 2);
+                boolean far = Math.abs(dx) > DRAG_RANGE;
+                int c = far ? 0xFFFF5A4A : k < 0.5F ? lerp(0xFF7CFC6A, 0xFFFFE25A, k * 2) : lerp(0xFFFFE25A, 0xFFFF8A4A, (k - 0.5F) * 2);
                 int s = Integer.signum(pull), end = hx + pull;
                 g.fill(Math.min(hx, end), hy + 16, Math.max(hx, end), hy + 19, c);
                 for (int i = 0; i < 4; i++) g.fill(end + s * i - (s < 0 ? 1 : 0), hy + 17 - (3 - i), end + s * i + (s > 0 ? 1 : 0), hy + 18 + (3 - i), c);

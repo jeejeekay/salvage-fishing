@@ -1,9 +1,12 @@
 # Salvage Fishing (Forge 1.20.1)
 
-Casting into a liquid starts a dive: the hook drops down a 2D shaft between rock walls. Steer it with A/D (a hard
-counter-strafe stop when you switch direction) or by clicking and dragging (the arrow's stretch sets the pull).
-Touching anything snags it; rock or the floor ends the dive with nothing; right-click reels in. Common catches swim back
-and forth (flipping as they turn); rare, treasure-like ones sit still. When the floor comes into view the view stops.
+Casting into a liquid starts a dive: the hook drops down a 2D shaft between rock walls. Hold A/D (or the mouse
+button, with the cursor within reach of the hook) to drift. Jig to jerk the hook sideways like a flappy-bird hop:
+double-tap A/D for the first jig, then each tap while it's live (0.75 s) jigs again, bigger each time, at most one
+jig per 0.5 s. Holding the mouse far from the hook jigs toward it. The line hangs loose from the top, gets yanked by
+jigs, and the hook swings along it. Touching anything snags it; rock or the floor ends the dive with nothing;
+right-click reels in. Common catches swim back and forth (flipping as they turn); rare, treasure-like ones sit
+still. When the floor comes into view the view stops.
 
 Everything in the shaft comes from the liquid's fishing loot table. Rarer items get commoner the deeper you go
 (weight w becomes w^(1 - 1.6 × depth)), and it gets darker.
