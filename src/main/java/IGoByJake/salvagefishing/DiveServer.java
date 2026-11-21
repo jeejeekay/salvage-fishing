@@ -183,30 +183,26 @@ public final class DiveServer {
         if (groups.isEmpty()) return; // nothing down there: leave it as normal fishing
         List<Group> list = new ArrayList<>(groups.values());
 
-        // Treasure-like catches (under 2.5% of the rolls, enchanted, or not common rarity; never anything in
-        // #minecraft:fishes) rest on the rock shelves. Everything else swims back and forth in the open water,
-        // with uneven gaps (32 to 96, one per 64 on average), never closer than 32 to another catch.
-        final int rolls = total;
-        java.util.function.Predicate<Group> treasure = g -> {
-            ItemStack st = g.stacks.get(0);
-            return !st.is(net.minecraft.tags.ItemTags.FISHES) && (st.isEnchanted()
-                    || st.getRarity() != net.minecraft.world.item.Rarity.COMMON || g.count < rolls * 0.025F);
-        };
-        List<Group> treasures = new ArrayList<>(), swimmers = new ArrayList<>();
-        for (Group g : list) (treasure.test(g) ? treasures : swimmers).add(g);
-        if (swimmers.isEmpty()) swimmers = list; // a table of only rare things: let them swim
+        // Fish (anything in #minecraft:fishes) swim back and forth in the open water. Everything else (junk,
+        // treasure, loot boxes) rests on the rock shelves, one or two to a shelf.
+        List<Group> fish = new ArrayList<>(), others = new ArrayList<>();
+        for (Group g : list) (g.stacks.get(0).is(net.minecraft.tags.ItemTags.FISHES) ? fish : others).add(g);
 
         List<Entry> entries = new ArrayList<>();
         List<float[]> pos = new ArrayList<>();
         List<Float> taken = new ArrayList<>();
         for (DiveCourse.Shelf sh : course.shelves()) {
-            if (treasures.isEmpty() || !sh.roomy()) continue;
+            int room = sh.room();
+            if (others.isEmpty() || room == 0) continue;
             float iy = sh.top() - 12;
             float lo = Math.min(sh.base(), sh.tip()) + 12, hi = Math.max(sh.base(), sh.tip()) - 12;
-            float x = lo + r.nextFloat() * (hi - lo);
-            ItemStack st = pick(treasures, iy / DiveCourse.DEPTH, r);
-            entries.add(new Entry(st, x, iy));
-            pos.add(new float[]{x, iy, 0, 0, 0, 0});
+            int n = room == 2 && r.nextFloat() < 0.5F ? 2 : 1;
+            for (int k = 0; k < n; k++) {
+                float x = n == 1 ? lo + r.nextFloat() * (hi - lo) : (k == 0 ? lo : hi);
+                ItemStack st = pick(others, iy / DiveCourse.DEPTH, r);
+                entries.add(new Entry(st, x, iy));
+                pos.add(new float[]{x, iy, 0, 0, 0, 0});
+            }
             taken.add(iy);
         }
         float y = 110 + r.nextInt(50);
@@ -216,8 +212,8 @@ public final class DiveServer {
             boolean clear = true;
             for (float t : taken) if (Math.abs(t - iy) < MIN_SPACING) clear = false;
             float lo = course.leftMax(iy - 14, iy + 14) + 14, hi = course.rightMin(iy - 14, iy + 14) - 14;
-            if (clear && hi > lo) {
-                ItemStack st = pick(swimmers, frac, r);
+            if (clear && hi > lo && !fish.isEmpty()) {
+                ItemStack st = pick(fish, frac, r);
                 float range = Math.min((hi - lo) / 2F, 12 + r.nextFloat() * 40);
                 float centre = lo + range + r.nextFloat() * (hi - lo - 2 * range);
                 float speed = 14 + r.nextFloat() * 26;

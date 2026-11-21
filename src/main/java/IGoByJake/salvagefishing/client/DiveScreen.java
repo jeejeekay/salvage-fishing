@@ -44,7 +44,10 @@ public class DiveScreen extends Screen {
      *  a jig stays live so single taps keep jigging. */
     private static final float JIG = 100F, JIG_MAX = 210F;
     private static final float JIG_COOLDOWN = 0.5F, JIG_CHAIN = 0.75F, DOUBLE_TAP = 0.3F;
-    /** Mouse: full drift speed at this distance from the hook; a jig past this plus 40% (a buffer of full drift). */
+    /** Sink speed in fast and slow mode. */
+    private static final float FAST = 1.25F, SLOW = 0.8F;
+    /** Mouse: full drift speed at this distance from the hook (sideways; up/down for slow/fast); a jig past this
+     *  plus 40% (a buffer of full drift). */
     private static final float DRAG_RANGE = 25F, JIG_RANGE = DRAG_RANGE * 1.4F;
     private static final float HOOK_R = 2.5F, ITEM_R = 11F;
     private static final ResourceLocation HOOK = new ResourceLocation("salvagefishing", "textures/gui/hook.png");
@@ -64,7 +67,10 @@ public class DiveScreen extends Screen {
     private long lastNanos = -1;
     private float animTime;
     private int caught = -1;
-    private boolean left, right, dragging;
+    private boolean left, right, up, down, dragging;
+    /** Sink speed: 1, or fast (S / drag down) or slow (W / drag up). */
+    private float sink = 1F;
+    private double mouseYNow;
     private double mouseXNow;
     private float lastJig = -10F, lastTap = -10F;
     private int chain, lastTapDir, pendingJig, lastJigDir;
@@ -92,6 +98,14 @@ public class DiveScreen extends Screen {
 
     // ---- input ---------------------------------------------------------------------------------------------
 
+    private boolean isUp(int key, int scan) {
+        return key == GLFW.GLFW_KEY_UP || Minecraft.getInstance().options.keyUp.matches(key, scan);
+    }
+
+    private boolean isDown(int key, int scan) {
+        return key == GLFW.GLFW_KEY_DOWN || Minecraft.getInstance().options.keyDown.matches(key, scan);
+    }
+
     private boolean isLeft(int key, int scan) {
         return key == GLFW.GLFW_KEY_LEFT || Minecraft.getInstance().options.keyLeft.matches(key, scan);
     }
@@ -102,6 +116,8 @@ public class DiveScreen extends Screen {
 
     @Override
     public boolean keyPressed(int key, int scan, int mods) {
+        if (isUp(key, scan)) { up = true; return true; }
+        if (isDown(key, scan)) { down = true; return true; }
         if (isLeft(key, scan)) {
             if (!left) tap(-1);
             left = true;
@@ -117,6 +133,8 @@ public class DiveScreen extends Screen {
 
     @Override
     public boolean keyReleased(int key, int scan, int mods) {
+        if (isUp(key, scan)) { up = false; return true; }
+        if (isDown(key, scan)) { down = false; return true; }
         if (isLeft(key, scan)) { left = false; return true; }
         if (isRight(key, scan)) { right = false; return true; }
         return super.keyReleased(key, scan, mods);
@@ -133,6 +151,7 @@ public class DiveScreen extends Screen {
         if (button == InputConstants.MOUSE_BUTTON_LEFT) {
             dragging = true;
             mouseXNow = x;
+            mouseYNow = y;
             return true;
         }
         return super.mouseClicked(x, y, button);
@@ -140,7 +159,10 @@ public class DiveScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
-        if (dragging) mouseXNow = x;
+        if (dragging) {
+            mouseXNow = x;
+            mouseYNow = y;
+        }
         return true;
     }
 
@@ -269,7 +291,14 @@ public class DiveScreen extends Screen {
         lineTop += lineTopV * dt;
         bendV += (-55F * bend - 5F * bendV) * dt;
         bend += bendV * dt;
-        depth += DiveCourse.SPEED * dt;
+        // Fast (S, or the mouse dragged a full drift-reach below the hook) or slow (W, or that far above).
+        int vert = (down ? 1 : 0) - (up ? 1 : 0);
+        if (vert == 0 && dragging) {
+            double dy = mouseYNow - hookScreenY;
+            vert = dy > DRAG_RANGE ? 1 : dy < -DRAG_RANGE ? -1 : 0;
+        }
+        sink = vert > 0 ? FAST : vert < 0 ? SLOW : 1F;
+        depth += DiveCourse.SPEED * sink * dt;
 
         if (depth + HOOK_R >= DiveCourse.DEPTH) { fail(); return; }
         if (depth > 0) {
@@ -487,6 +516,17 @@ public class DiveScreen extends Screen {
         g.pose().translate(x2 - 7.5F, y2 - 1.5F, 0);
         g.blit(HOOK, 0, 0, 0F, 0F, 16, 16, 16, 16);
         g.pose().popPose();
+        if (sink != 1F && state == State.PLAY) {
+            // Fast: chevrons trailing above the hook; slow: below it, pointing up.
+            int dir = sink > 1F ? 1 : -1, c = sink > 1F ? 0xCCFFE25A : 0xCC7CC8FF;
+            for (int k = 0; k < 2; k++) {
+                int cy = hy + (dir > 0 ? -24 - k * 6 : 18 + k * 6);
+                for (int i = 0; i < 3; i++) {
+                    g.fill(hx - 3 + i, cy + dir * i, hx - 2 + i, cy + dir * i + 1, c);
+                    g.fill(hx + 3 - i, cy + dir * i, hx + 4 - i, cy + dir * i + 1, c);
+                }
+            }
+        }
         if (dragging && state == State.PLAY) {
             int dx = (int) Math.round(mouseXNow - hx);
             int reach = Math.round(JIG_RANGE);

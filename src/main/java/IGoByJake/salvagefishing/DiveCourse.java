@@ -34,6 +34,12 @@ public final class DiveCourse {
         public boolean roomy() {
             return Math.abs(tip - base) >= 28;
         }
+
+        /** How many things fit on it side by side (each 24 wide). */
+        public int room() {
+            float w = Math.abs(tip - base);
+            return w >= 60 ? 2 : w >= 28 ? 1 : 0;
+        }
     }
 
     public DiveCourse(long seed) {
@@ -48,7 +54,7 @@ public final class DiveCourse {
         int sy = 240 + r.nextInt(80);
         while (sy < DEPTH - 60) {
             plan.add(new int[]{sy / ROW, r.nextBoolean() ? -1 : 1, (4 + r.nextInt(4)) * STEP, 1 + r.nextInt(2)});
-            sy += 170 + r.nextInt(120);
+            sy += 110 + r.nextInt(90);
         }
         // Ledges that jut in from one side.
         int y = 150 + r.nextInt(60);
