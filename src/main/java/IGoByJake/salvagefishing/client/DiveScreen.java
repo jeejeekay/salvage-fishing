@@ -342,24 +342,27 @@ public class DiveScreen extends Screen {
 
     private void drawWater(GuiGraphics g) {
         int top = py0, bottom = py0 + ph;
-        for (int y = top; y < bottom; y += 4) {
-            float wy = camTop + (y - py0);
-            int c;
-            if (wy < 0) c = theme.sky;
-            else {
-                float f = (float) Math.pow(Mth.clamp(wy / DiveCourse.DEPTH, 0, 1), 0.8);
-                c = f < 0.5F ? lerp(theme.top, theme.mid, f * 2) : lerp(theme.mid, theme.bottom, (f - 0.5F) * 2);
-            }
-            g.fill(px0, y, px0 + pw, Math.min(bottom, y + 4), c);
-        }
-        // The surface: a pixel wave line.
         int surf = sy(0);
+        // Sky down to the surface, then water in 4-deep bands fixed to the world (not the screen), so bands and
+        // the sky/water edge move with the scroll instead of flickering between colours.
+        if (surf > top) g.fill(px0, top, px0 + pw, Math.min(bottom, surf), theme.sky);
+        int firstBand = Math.max(0, (int) Math.floor(camTop / 4F));
+        for (int b = firstBand; ; b++) {
+            int y0 = sy(b * 4F), y1 = sy(b * 4F + 4F);
+            if (y0 >= bottom) break;
+            float f = (float) Math.pow(Mth.clamp(b * 4F / DiveCourse.DEPTH, 0, 1), 0.8);
+            int c = f < 0.5F ? lerp(theme.top, theme.mid, f * 2) : lerp(theme.mid, theme.bottom, (f - 0.5F) * 2);
+            g.fill(px0, Math.max(top, y0), px0 + pw, Math.min(bottom, y1), c);
+        }
+        // The surface: gentle drifting waves, each 4-wide column filled solidly from sky to water so no gaps open.
         if (surf > top - 8 && surf < bottom + 8) {
-            // Gentle waves drifting along (whole pixels, no flicker).
             for (int x = 0; x < pw; x += 4) {
                 int h = Math.round(Mth.sin((x + time * 10F) * 0.07F) * 2F);
-                g.fill(px0 + x, surf + h - 2, px0 + x + 4, surf + h, theme.foam);
-                g.fill(px0 + x, surf + h, px0 + x + 4, surf + h + 2, theme.light);
+                int xs = px0 + x;
+                if (h < 0) g.fill(xs, surf + h, xs + 4, surf, theme.top);   // crest above the line: water
+                if (h > 0) g.fill(xs, surf, xs + 4, surf + h, theme.sky);   // trough below the line: sky
+                g.fill(xs, surf + h - 2, xs + 4, surf + h, theme.foam);
+                g.fill(xs, surf + h, xs + 4, surf + h + 2, theme.light);
             }
         }
         // Bubbles (or embers) drifting up.
@@ -542,6 +545,7 @@ public class DiveScreen extends Screen {
             g.fill(xs, top - 10 + back, xs + 4, top + 4, theme.deep);
             g.fill(xs, top + front, xs + 4, bottom, theme.mid);
             g.fill(xs, top + front, xs + 4, top + front + 4, theme.light);
+            if (((x / 4) + (int) (t * 8)) % 7 == 0) g.fill(xs, top + front + 10, xs + 4, top + front + 12, theme.light);
             g.fill(xs, top + front - 2, xs + 4, top + front, theme.foam);
         }
     }
