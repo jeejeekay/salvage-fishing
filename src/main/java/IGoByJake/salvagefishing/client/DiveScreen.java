@@ -44,8 +44,8 @@ public class DiveScreen extends Screen {
      *  a jig stays live so single taps keep jigging. */
     private static final float JIG = 100F, JIG_MAX = 210F;
     private static final float JIG_COOLDOWN = 0.5F, JIG_CHAIN = 0.75F, DOUBLE_TAP = 0.3F;
-    /** Sink speed in fast and slow mode. */
-    private static final float FAST = 1.25F, SLOW = 0.8F;
+    /** Sink speed in slow mode (30.4/s, the same as before 1.5.0); there is no fast mode, the normal speed is it. */
+    private static final float SLOW = 0.64F;
     /** Mouse: full drift speed at this distance from the hook (sideways; up/down for slow/fast); a jig past this
      *  plus 40% (a buffer of full drift). */
     private static final float DRAG_RANGE = 25F, JIG_RANGE = DRAG_RANGE * 1.4F;
@@ -68,7 +68,7 @@ public class DiveScreen extends Screen {
     private float animTime;
     private int caught = -1;
     private boolean left, right, up, down, dragging;
-    /** Sink speed: 1, or fast (S / drag down) or slow (W / drag up). */
+    /** Sink speed: 1, or slow (W / drag up). */
     private float sink = 1F;
     private double mouseYNow;
     private double mouseXNow;
@@ -291,13 +291,9 @@ public class DiveScreen extends Screen {
         lineTop += lineTopV * dt;
         bendV += (-55F * bend - 5F * bendV) * dt;
         bend += bendV * dt;
-        // Fast (S, or the mouse dragged a full drift-reach below the hook) or slow (W, or that far above).
-        int vert = (down ? 1 : 0) - (up ? 1 : 0);
-        if (vert == 0 && dragging) {
-            double dy = mouseYNow - hookScreenY;
-            vert = dy > DRAG_RANGE ? 1 : dy < -DRAG_RANGE ? -1 : 0;
-        }
-        sink = vert > 0 ? FAST : vert < 0 ? SLOW : 1F;
+        // Slow: W, or the mouse dragged a full drift-reach above the hook. (No fast mode.)
+        boolean slow = up || dragging && mouseYNow - hookScreenY < -DRAG_RANGE;
+        sink = slow ? SLOW : 1F;
         depth += DiveCourse.SPEED * sink * dt;
 
         if (depth + HOOK_R >= DiveCourse.DEPTH) { fail(); return; }
@@ -517,10 +513,9 @@ public class DiveScreen extends Screen {
         g.blit(HOOK, 0, 0, 0F, 0F, 16, 16, 16, 16);
         g.pose().popPose();
         if (state == State.PLAY) {
-            // Fast: chevrons below the hook pointing down; slow: above it pointing up.
-            if (sink != 1F) {
-                int dir = sink > 1F ? 1 : -1, c = sink > 1F ? 0xCCFFE25A : 0xCC7CC8FF;
-                for (int k = 0; k < 2; k++) chevron(g, hx, hy + (dir > 0 ? 14 + k * 6 : -22 - k * 6), 0, dir, c);
+            // Slow: two chevrons above the hook pointing up.
+            if (sink < 1F) {
+                for (int k = 0; k < 2; k++) chevron(g, hx, hy - 22 - k * 6, 0, -1, 0xCC7CC8FF);
             }
             // Sideways: three chevrons pointing the way the hook is pulled, spreading apart and warming in colour
             // the harder the pull (red when the mouse is far enough to jig). They flash darker while a jig carries
