@@ -39,14 +39,14 @@ import java.util.Random;
  */
 public class DiveScreen extends Screen {
     /** Drift: top speed and how fast it's reached; water drag on anything faster. */
-    private static final float DRIFT_V = 38F, DRIFT_ACCEL = 110F, DRAG = 2.4F, STOP = 60F;
+    private static final float DRIFT_V = 38F, DRIFT_ACCEL = 110F, DRAG = 2.4F, GLIDE = 22F;
     /** A jig's push (sideways speed), the most sideways speed jigs can build, the gap between jigs, and how long
      *  a jig stays live so single taps keep jigging. */
-    private static final float JIG = 80F, JIG_MAX = 170F;
+    private static final float JIG = 100F, JIG_MAX = 210F;
     private static final float JIG_COOLDOWN = 0.5F, JIG_CHAIN = 0.75F, DOUBLE_TAP = 0.3F;
     /** Mouse: full drift speed at this distance from the hook; a jig past this plus 10%. */
     private static final float DRAG_RANGE = 25F, JIG_RANGE = DRAG_RANGE * 1.1F;
-    private static final float HOOK_R = 5F, ITEM_R = 11F;
+    private static final float HOOK_R = 2.5F, ITEM_R = 11F;
     private static final ResourceLocation HOOK = new ResourceLocation("salvagefishing", "textures/gui/hook.png");
     private static final float START_DEPTH = -40F;
 
@@ -185,13 +185,13 @@ public class DiveScreen extends Screen {
         return p[0] + (u < 2 * range ? u - range : 3 * range - u);
     }
 
-    /** True while entry i swims left (it's drawn flipped then). */
-    private boolean facingLeft(int i, float t) {
+    /** True while entry i swims right. Item sprites (like vanilla fish) face left, so it's drawn turned round then. */
+    private boolean swimsRight(int i, float t) {
         float[] p = pos.get(i);
         if (p[5] == 0 || p[2] <= 0 || p[3] <= 0) return false;
         float lap = 4 * p[2];
         float u = ((t * p[3] + p[4] * lap) % lap + lap) % lap;
-        return u >= 2 * p[2];
+        return u < 2 * p[2];
     }
 
     /** A key tap toward dir: the first jig needs a double tap; while a jig is live, every tap jigs. */
@@ -240,18 +240,22 @@ public class DiveScreen extends Screen {
             float dx = (float) (mouseXNow - sx(hookX));
             if (Math.abs(dx) > JIG_RANGE) {
                 if (canJig()) jig((int) Math.signum(dx));
+                target = Math.signum(dx) * DRIFT_V; // keep drifting toward it between jigs
             } else {
                 target = Mth.clamp(dx / DRAG_RANGE, -1F, 1F) * DRIFT_V;
             }
         }
-        boolean fast = Math.abs(vx) > DRIFT_V + 1;
+        boolean fast = Math.abs(vx) > DRIFT_V;
         if (!Float.isNaN(target) && !(fast && Math.signum(vx) == Math.signum(target))) {
             float d = target - vx, max = DRIFT_ACCEL * dt;
             vx += Mth.clamp(d, -max, max);
         }
-        if (fast || Float.isNaN(target)) {
-            vx *= (float) Math.exp(-DRAG * dt);                       // water drag
-            if (Float.isNaN(target)) vx -= Mth.clamp(vx, -STOP * dt, STOP * dt);
+        if (fast) {
+            // Water drag after a jig, but only down to drift speed: the hook carries on rather than stopping dead.
+            float slowed = vx * (float) Math.exp(-DRAG * dt);
+            vx = Math.abs(slowed) < DRIFT_V ? Math.signum(vx) * DRIFT_V : slowed;
+        } else if (Float.isNaN(target)) {
+            vx -= Mth.clamp(vx, -GLIDE * dt, GLIDE * dt);             // no input: a slow glide to a stop
         }
         float nx = hookX + vx * dt, edge = DiveCourse.WIDTH / 2F - HOOK_R;
         if (Math.abs(nx) > edge) vx = 0;
@@ -351,21 +355,11 @@ public class DiveScreen extends Screen {
         // The surface: a pixel wave line.
         int surf = sy(0);
         if (surf > top - 8 && surf < bottom + 8) {
+            // Gentle waves drifting along (whole pixels, no flicker).
             for (int x = 0; x < pw; x += 4) {
-                int h = Math.round(Mth.sin(x * 0.09F + time * 3F) * 1.5F) * 2;
+                int h = Math.round(Mth.sin((x + time * 10F) * 0.07F) * 2F);
                 g.fill(px0 + x, surf + h - 2, px0 + x + 4, surf + h, theme.foam);
                 g.fill(px0 + x, surf + h, px0 + x + 4, surf + h + 2, theme.light);
-            }
-        }
-        // Light shafts near the top.
-        for (int k = 0; k < 3; k++) {
-            int baseX = px0 + 20 + k * 52;
-            for (int y = Math.max(top, surf); y < Math.min(bottom, surf + 260); y += 4) {
-                float wy = y - surf;
-                int a = (int) ((1F - wy / 260F) * 28);
-                if (a <= 0) continue;
-                int x = baseX + Math.round(wy * 0.3F);
-                g.fill(x, y, x + 8, y + 4, (a << 24) | (theme.foam & 0xFFFFFF));
             }
         }
         // Bubbles (or embers) drifting up.
@@ -424,7 +418,7 @@ public class DiveScreen extends Screen {
             if (y < py0 - 20 || y > py0 + ph + 20) continue;
             int x = sx(itemX(i, time));
             g.pose().pushPose();
-            if (facingLeft(i, time)) {
+            if (swimsRight(i, time)) {
                 // Turned round (a half turn about the vertical, so it stays lit and drawn the right way round).
                 g.pose().translate(x, y, 300);
                 g.pose().scale(-1.5F, 1.5F, -1F);
@@ -549,7 +543,6 @@ public class DiveScreen extends Screen {
             g.fill(xs, top + front, xs + 4, bottom, theme.mid);
             g.fill(xs, top + front, xs + 4, top + front + 4, theme.light);
             g.fill(xs, top + front - 2, xs + 4, top + front, theme.foam);
-            if (((x / 4) + (int) (t * 8)) % 7 == 0) g.fill(xs, top + front + 10, xs + 4, top + front + 12, theme.light);
         }
     }
 
