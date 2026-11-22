@@ -117,6 +117,12 @@ public final class DiveCourse {
         }
     }
 
+    /** Where the floor treasure rests: the middle of the gap just above the floor. */
+    public float floorX() {
+        float y = DEPTH - ROW / 2F;
+        return Math.round((left(y) + right(y)) / 2F / STEP) * STEP;
+    }
+
     public java.util.List<Shelf> shelves() {
         return shelves;
     }

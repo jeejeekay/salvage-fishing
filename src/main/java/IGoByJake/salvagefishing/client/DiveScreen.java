@@ -437,9 +437,12 @@ public class DiveScreen extends Screen {
             g.fill(px0, floor, px0 + pw, bottom, body);
             g.fill(px0, floor, px0 + pw, floor + 2, rim);
             // a few blocky bumps on the floor
+            // (kept clear round the middle, where the floor treasure rests)
             java.util.Random r = new java.util.Random(seed * 7);
+            float mid = course.floorX() + pw / 2F;
             for (int x = 0; x < pw; x += DiveCourse.STEP) {
                 int h = r.nextInt(3) * 4;
+                if (Math.abs(x + DiveCourse.STEP / 2F - mid) < 20) continue;
                 if (h > 0) g.fill(px0 + x, floor - h, px0 + x + DiveCourse.STEP, floor, body);
             }
         }

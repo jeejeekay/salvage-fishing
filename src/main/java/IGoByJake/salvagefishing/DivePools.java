@@ -25,6 +25,10 @@ import java.util.Map;
 /**
  * Which liquids start a dive, and what's down there: {@code data/<ns>/salvagefishing_pools/<name>.json}
  * <pre>{ "fluid": "#minecraft:water", "loot_table": "minecraft:gameplay/fishing", "theme": "water" }</pre>
+ * Floor treasure: one item rests in the middle of the floor, rolled from {@code "floor_loot_table"} if the pool names
+ * one ({@code "minecraft:empty"} for none), else from {@code <pool namespace>:floor/<pool name>} (e.g.
+ * {@code salvagefishing:floor/water}) if a pack adds it, else from {@code salvagefishing:floor/default} (a gold block).
+ * Salvage Fishing ships only the default, so packs add per-pool tables without overriding any of its files.
  * Optional: {@code "hook"} (only bobbers of this entity type, e.g. a mod's lava bobber), {@code "direct": true}
  * (catches go straight to the inventory instead of flying out, for liquids that would burn them).
  * If {@code <loot_table>/<dimension namespace>/<dimension path>} exists it is used in that dimension instead.
@@ -36,7 +40,7 @@ public final class DivePools {
     private static final Logger LOG = LogUtils.getLogger();
 
     public record Pool(@Nullable TagKey<Fluid> tag, @Nullable Fluid fluid, ResourceLocation table, String theme,
-                       @Nullable ResourceLocation hook, boolean direct, int[] colors) {
+                       @Nullable ResourceLocation hook, boolean direct, int[] colors, ResourceLocation floorTable, boolean floorNamed) {
         boolean matches(FluidState state, FishingHook entity) {
             if (state.isEmpty()) return false;
             if (hook != null && !hook.equals(ForgeRegistries.ENTITY_TYPES.getKey(entity.getType()))) return false;
@@ -96,8 +100,10 @@ public final class DivePools {
                             colors[i] = (int) (hex.length() <= 6 ? v | 0xFF000000L : v);
                         }
                     }
+                    ResourceLocation floor = o.has("floor_loot_table") ? new ResourceLocation(GsonHelper.getAsString(o, "floor_loot_table"))
+                            : new ResourceLocation(id.getNamespace(), "floor/" + id.getPath());
                     out.add(new Pool(tag, fluid, new ResourceLocation(GsonHelper.getAsString(o, "loot_table")),
-                            GsonHelper.getAsString(o, "theme", "water"), hook, GsonHelper.getAsBoolean(o, "direct", false), colors));
+                            GsonHelper.getAsString(o, "theme", "water"), hook, GsonHelper.getAsBoolean(o, "direct", false), colors, floor, o.has("floor_loot_table")));
                 } catch (RuntimeException ex) {
                     LOG.error("Bad dive pool {}: {}", id, ex.getMessage());
                 }
