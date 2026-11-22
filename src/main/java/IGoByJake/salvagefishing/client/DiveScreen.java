@@ -46,6 +46,8 @@ public class DiveScreen extends Screen {
     private static final float JIG_COOLDOWN = 0.5F, JIG_CHAIN = 0.75F, DOUBLE_TAP = 0.3F;
     /** Sink speed in slow mode (30.4/s, the same as before 1.5.0); there is no fast mode, the normal speed is it. */
     private static final float SLOW = 0.64F;
+    /** Mouse: drag this far above the hook for slow mode (short, since the hook sits high in the view). */
+    private static final float SLOW_REACH = 10F;
     /** Mouse: full drift speed at this distance from the hook (sideways; up/down for slow/fast); a jig past this
      *  plus 40% (a buffer of full drift). */
     private static final float DRAG_RANGE = 25F, JIG_RANGE = DRAG_RANGE * 1.4F;
@@ -291,8 +293,8 @@ public class DiveScreen extends Screen {
         lineTop += lineTopV * dt;
         bendV += (-55F * bend - 5F * bendV) * dt;
         bend += bendV * dt;
-        // Slow: W, or the mouse dragged a full drift-reach above the hook. (No fast mode.)
-        boolean slow = up || dragging && mouseYNow - hookScreenY < -DRAG_RANGE;
+        // Slow: W, or the mouse dragged more than SLOW_REACH above the hook. (No fast mode.)
+        boolean slow = up || dragging && mouseYNow - hookScreenY < -SLOW_REACH;
         sink = slow ? SLOW : 1F;
         depth += DiveCourse.SPEED * sink * dt;
 
