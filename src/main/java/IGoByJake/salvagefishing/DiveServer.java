@@ -58,6 +58,8 @@ import java.util.UUID;
  * straight into the player's bucket, say) still work.
  */
 public final class DiveServer {
+    /** How far above the floor the swimming fish stop, in px (16 px = 1 m on the depth gauge). */
+    static final int FISH_CLEAR = 75;
     public static final ResourceLocation CATCH_ID = new ResourceLocation(SalvageFishing.MODID, "catch");
     static final int SAMPLES = 200;
     /** Catches are at least this far apart in depth (each is 24 tall). */
@@ -206,7 +208,9 @@ public final class DiveServer {
             taken.add(iy);
         }
         float y = 110 + r.nextInt(50);
-        while (y < DiveCourse.DEPTH - 24) {
+        // No swimmers in the last FISH_CLEAR of the dive: the shaft narrows there, and a fish could fill the whole
+        // channel above the floor treasure.
+        while (y < DiveCourse.DEPTH - FISH_CLEAR) {
             float frac = y / DiveCourse.DEPTH;
             float iy = y;
             boolean clear = true;
