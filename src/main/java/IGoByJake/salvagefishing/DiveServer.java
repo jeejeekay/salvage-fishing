@@ -225,6 +225,7 @@ public final class DiveServer {
 
         // The floor treasure: one roll of the pool's floor table, resting in the middle of the floor.
         LootTable floorTable = tableFor(level, pool.floorTable());
+        if (floorTable == LootTable.EMPTY && pool.floorDefault() != null) floorTable = tableFor(level, pool.floorDefault());
         if (floorTable != LootTable.EMPTY) {
             for (ItemStack st : floorTable.getRandomItems(params)) {
                 if (st.isEmpty()) continue;

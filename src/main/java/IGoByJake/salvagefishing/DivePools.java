@@ -26,9 +26,11 @@ import java.util.Map;
  * Which liquids start a dive, and what's down there: {@code data/<ns>/salvagefishing_pools/<name>.json}
  * <pre>{ "fluid": "#minecraft:water", "loot_table": "minecraft:gameplay/fishing", "theme": "water" }</pre>
  * Floor treasure: one item rests in the middle of the floor, rolled from {@code "floor_loot_table"} if the pool names
- * one, else from {@code <pool namespace>:floor/<pool name>} (e.g. {@code salvagefishing:floor/water}); no table (or
- * an empty roll) means no floor treasure. Salvage Fishing ships {@code salvagefishing:floor/water} with a gold block,
- * a placeholder for packs to override.
+ * one, else from {@code <pool namespace>:floor/<pool name>} (e.g. {@code salvagefishing:floor/water}) if a pack adds
+ * it, else from {@code <pool namespace>:floor/<pool name>_default}; no table (or an empty roll) means no floor
+ * treasure. Salvage Fishing ships only {@code salvagefishing:floor/water_default} (a gold block, a placeholder), so a
+ * pack's {@code floor/water} wins without overriding anything: two mods shipping the same file would be decided by
+ * load order, which Forge doesn't let a mod control for data.
  * Optional: {@code "hook"} (only bobbers of this entity type, e.g. a mod's lava bobber), {@code "direct": true}
  * (catches go straight to the inventory instead of flying out, for liquids that would burn them).
  * If {@code <loot_table>/<dimension namespace>/<dimension path>} exists it is used in that dimension instead.
@@ -40,7 +42,8 @@ public final class DivePools {
     private static final Logger LOG = LogUtils.getLogger();
 
     public record Pool(@Nullable TagKey<Fluid> tag, @Nullable Fluid fluid, ResourceLocation table, String theme,
-                       @Nullable ResourceLocation hook, boolean direct, int[] colors, ResourceLocation floorTable) {
+                       @Nullable ResourceLocation hook, boolean direct, int[] colors, ResourceLocation floorTable,
+                       @Nullable ResourceLocation floorDefault) {
         boolean matches(FluidState state, FishingHook entity) {
             if (state.isEmpty()) return false;
             if (hook != null && !hook.equals(ForgeRegistries.ENTITY_TYPES.getKey(entity.getType()))) return false;
@@ -100,10 +103,12 @@ public final class DivePools {
                             colors[i] = (int) (hex.length() <= 6 ? v | 0xFF000000L : v);
                         }
                     }
-                    ResourceLocation floor = o.has("floor_loot_table") ? new ResourceLocation(GsonHelper.getAsString(o, "floor_loot_table"))
+                    boolean named = o.has("floor_loot_table");
+                    ResourceLocation floor = named ? new ResourceLocation(GsonHelper.getAsString(o, "floor_loot_table"))
                             : new ResourceLocation(id.getNamespace(), "floor/" + id.getPath());
+                    ResourceLocation floorDefault = named ? null : new ResourceLocation(id.getNamespace(), "floor/" + id.getPath() + "_default");
                     out.add(new Pool(tag, fluid, new ResourceLocation(GsonHelper.getAsString(o, "loot_table")),
-                            GsonHelper.getAsString(o, "theme", "water"), hook, GsonHelper.getAsBoolean(o, "direct", false), colors, floor));
+                            GsonHelper.getAsString(o, "theme", "water"), hook, GsonHelper.getAsBoolean(o, "direct", false), colors, floor, floorDefault));
                 } catch (RuntimeException ex) {
                     LOG.error("Bad dive pool {}: {}", id, ex.getMessage());
                 }
