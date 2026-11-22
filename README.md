@@ -21,7 +21,7 @@ Optional: `hook` (only this bobber entity type), `direct` (catch goes straight t
 (rock is always a dark silhouette, so no textures are needed). A table at
 `<loot_table>/<dim namespace>/<dim path>` is used in that dimension if it exists.
 
-**Floor treasure (1.6.0):** one item rests in the middle of the dive's floor. It's rolled from the pool's `floor_loot_table` if set (`"minecraft:empty"` for none), else `<pool namespace>:floor/<pool name>` if a pack adds it (e.g. `data/salvagefishing/loot_tables/floor/water.json`), else `salvagefishing:floor/default` (a gold block). Salvage Fishing ships only the default (a placeholder for pack makers to see), so packs never have to override its files. Themes: `water`, `lava`.
+**Floor treasure:** one item rests in the middle of the dive's floor, rolled from the pool's `floor_loot_table` if set, else `<pool namespace>:floor/<pool name>`. No table or an empty roll = no floor treasure. Salvage Fishing ships `salvagefishing:floor/water` with a **gold block** as a placeholder: override that loot table in your pack (a mod overriding it should load after Salvage Fishing). Themes: `water`, `lava`.
 
 The caught stack is passed through global loot modifiers once more as table `salvagefishing:catch`, with the real
 bobber and angler, so angler-based modifiers still apply. `ItemFishedEvent` is fired as for normal fishing.

@@ -10,7 +10,7 @@ public final class DiveCourse {
     /** Shaft width. */
     public static final int WIDTH = 160;
     /** How deep the line goes. */
-    public static final int DEPTH = 1400;
+    public static final int DEPTH = 700;
     /** How fast the hook sinks, per second. */
     public static final float SPEED = 47.5F;
     /** Wall rows are this tall: blocky, like the game. */

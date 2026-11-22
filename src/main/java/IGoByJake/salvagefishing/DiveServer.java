@@ -59,8 +59,6 @@ import java.util.UUID;
  */
 public final class DiveServer {
     public static final ResourceLocation CATCH_ID = new ResourceLocation(SalvageFishing.MODID, "catch");
-    /** The floor treasure for pools without their own floor table. */
-    static final ResourceLocation DEFAULT_FLOOR = new ResourceLocation(SalvageFishing.MODID, "floor/default");
     static final int SAMPLES = 200;
     /** Catches are at least this far apart in depth (each is 24 tall). */
     static final int MIN_SPACING = 32;
@@ -227,7 +225,6 @@ public final class DiveServer {
 
         // The floor treasure: one roll of the pool's floor table, resting in the middle of the floor.
         LootTable floorTable = tableFor(level, pool.floorTable());
-        if (floorTable == LootTable.EMPTY && !pool.floorNamed()) floorTable = tableFor(level, DEFAULT_FLOOR);
         if (floorTable != LootTable.EMPTY) {
             for (ItemStack st : floorTable.getRandomItems(params)) {
                 if (st.isEmpty()) continue;
