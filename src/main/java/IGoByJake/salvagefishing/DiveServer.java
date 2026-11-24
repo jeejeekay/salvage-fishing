@@ -210,7 +210,7 @@ public final class DiveServer {
             if (from.isEmpty()) continue;
             ItemStack st = pick(from, cv.restY() / DiveCourse.DEPTH, r);
             entries.add(new Entry(st, cv.restX(), cv.restY()));
-            pos.add(new float[]{cv.restX(), cv.restY(), 0, 0, r.nextFloat(), 0, 0});
+            pos.add(new float[]{cv.restX(), cv.restY(), 0, 0, r.nextFloat(), 0, cv.side() < 0 ? 1 : 0}); // in a left-wall cove it faces right, out of the cove
             taken.add(cv.restY());
         }
         for (DiveCourse.Shelf sh : course.shelves()) {

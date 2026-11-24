@@ -12,7 +12,7 @@ import java.util.function.Supplier;
 
 /** Server → client: a dive starts. The shaft's seed (walls), its look, and what's down there (x, y, drift, phase). */
 /** pos per entry: centre x, y, swim range, swim speed, phase (0..1), how it moves (0 still, 1 back and forth,
- *  2 round a square), the square's half height. */
+ *  2 round a square), the square's half height (for one sitting still: 1 = it faces right). */
 public record StartDivePacket(int id, long seed, String theme, int[] colors, List<ItemStack> stacks, List<float[]> pos) {
     public static final int FIELDS = 7;
 

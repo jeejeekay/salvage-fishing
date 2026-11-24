@@ -207,7 +207,7 @@ public class DiveScreen extends Screen {
     private float[] motion(int i, float t) {
         float[] p = pos.get(i);
         float rx = p[2], speed = p[3], ry = p.length > 6 ? p[6] : 0;
-        if (p[5] == 0 || rx <= 0 || speed <= 0) return new float[]{p[0], p[1], 0};
+        if (p[5] == 0 || rx <= 0 || speed <= 0) return new float[]{p[0], p[1], p[5] == 0 && ry == 1 ? 1 : 0}; // still: a 1 here means it faces right
         if (p[5] == 2 && ry > 0) {
             float lap = 4 * rx + 4 * ry;
             float u = ((t * speed + p[4] * lap) % lap + lap) % lap;
