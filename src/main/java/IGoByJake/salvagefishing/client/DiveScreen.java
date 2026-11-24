@@ -199,23 +199,29 @@ public class DiveScreen extends Screen {
 
     // ---- simulation ----------------------------------------------------------------------------------------
 
-    /** Where entry i is at time t: swimmers go back and forth across their stretch at a steady speed. */
-    private float itemX(int i, float t) {
+    /**
+     * Where entry i is at time t, and which way it faces: [x, y, heading]. Heading 0 = left (how item sprites are
+     * drawn), 1 = right, 2 = down, 3 = up. Back-and-forth swimmers cross their stretch at a steady speed; fast
+     * swimmers lap a square (right along the top, down, left along the bottom, up), turning 90 degrees at each corner.
+     */
+    private float[] motion(int i, float t) {
         float[] p = pos.get(i);
-        float range = p[2], speed = p[3];
-        if (p[5] == 0 || range <= 0 || speed <= 0) return p[0];
-        float lap = 4 * range;
+        float rx = p[2], speed = p[3], ry = p.length > 6 ? p[6] : 0;
+        if (p[5] == 0 || rx <= 0 || speed <= 0) return new float[]{p[0], p[1], 0};
+        if (p[5] == 2 && ry > 0) {
+            float lap = 4 * rx + 4 * ry;
+            float u = ((t * speed + p[4] * lap) % lap + lap) % lap;
+            if (u < 2 * rx) return new float[]{p[0] - rx + u, p[1] - ry, 1};
+            u -= 2 * rx;
+            if (u < 2 * ry) return new float[]{p[0] + rx, p[1] - ry + u, 2};
+            u -= 2 * ry;
+            if (u < 2 * rx) return new float[]{p[0] + rx - u, p[1] + ry, 0};
+            u -= 2 * rx;
+            return new float[]{p[0] - rx, p[1] + ry - u, 3};
+        }
+        float lap = 4 * rx;
         float u = ((t * speed + p[4] * lap) % lap + lap) % lap;
-        return p[0] + (u < 2 * range ? u - range : 3 * range - u);
-    }
-
-    /** True while entry i swims right. Item sprites (like vanilla fish) face left, so it's drawn turned round then. */
-    private boolean swimsRight(int i, float t) {
-        float[] p = pos.get(i);
-        if (p[5] == 0 || p[2] <= 0 || p[3] <= 0) return false;
-        float lap = 4 * p[2];
-        float u = ((t * p[3] + p[4] * lap) % lap + lap) % lap;
-        return u < 2 * p[2];
+        return new float[]{p[0] + (u < 2 * rx ? u - rx : 3 * rx - u), p[1], u < 2 * rx ? 1 : 0};
     }
 
     /** A key tap toward dir: the first jig needs a double tap; while a jig is live, every tap the same way jigs
@@ -304,9 +310,9 @@ public class DiveScreen extends Screen {
             if (hookX - HOOK_R < l || hookX + HOOK_R > r) { fail(); return; }
         }
         for (int i = 0; i < stacks.size(); i++) {
-            float[] p = pos.get(i);
-            if (Math.abs(p[1] - depth) > ITEM_R + HOOK_R) continue;
-            if (Math.abs(itemX(i, time) - hookX) <= ITEM_R + HOOK_R) {
+            float[] m = motion(i, time);
+            if (Math.abs(m[1] - depth) > ITEM_R + HOOK_R) continue;
+            if (Math.abs(m[0] - hookX) <= ITEM_R + HOOK_R) {
                 caught = i;
                 state = State.CATCH;
                 animTime = 0;
@@ -451,12 +457,17 @@ public class DiveScreen extends Screen {
     private void drawItems(GuiGraphics g) {
         for (int i = 0; i < stacks.size(); i++) {
             if (i == caught) continue;
-            float[] p = pos.get(i);
-            int y = sy(p[1]);
+            float[] m = motion(i, time);
+            int y = sy(m[1]);
             if (y < py0 - 20 || y > py0 + ph + 20) continue;
-            int x = sx(itemX(i, time));
+            int x = sx(m[0]);
             g.pose().pushPose();
-            if (swimsRight(i, time)) {
+            if (m[2] >= 2) {
+                // Swimming down or up: the left-facing sprite turned a quarter so its head leads.
+                g.pose().translate(x, y, 0);
+                g.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(m[2] == 2 ? -90 : 90));
+                g.pose().scale(1.5F, 1.5F, 1F);
+            } else if (m[2] == 1) {
                 // Turned round (a half turn about the vertical, so it stays lit and drawn the right way round).
                 g.pose().translate(x, y, 300);
                 g.pose().scale(-1.5F, 1.5F, -1F);

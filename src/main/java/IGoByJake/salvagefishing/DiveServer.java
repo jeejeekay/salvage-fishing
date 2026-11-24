@@ -60,6 +60,12 @@ import java.util.UUID;
 public final class DiveServer {
     /** How far above the floor the swimming fish stop, in px (16 px = 1 m on the depth gauge). */
     static final int FISH_CLEAR = 75;
+    /** Fish that rest in coves and on shelves instead of swimming. */
+    public static final net.minecraft.tags.TagKey<net.minecraft.world.item.Item> BOTTOM_FEEDERS =
+            net.minecraft.tags.ItemTags.create(new ResourceLocation(SalvageFishing.MODID, "bottom_feeders"));
+    /** Fish that swim fast round a square, turning 90 degrees at each corner. */
+    public static final net.minecraft.tags.TagKey<net.minecraft.world.item.Item> FAST_SWIMMERS =
+            net.minecraft.tags.ItemTags.create(new ResourceLocation(SalvageFishing.MODID, "fast_swimmers"));
     public static final ResourceLocation CATCH_ID = new ResourceLocation(SalvageFishing.MODID, "catch");
     static final int SAMPLES = 200;
     /** Catches are at least this far apart in depth (each is 24 tall). */
@@ -185,25 +191,39 @@ public final class DiveServer {
         if (groups.isEmpty()) return; // nothing down there: leave it as normal fishing
         List<Group> list = new ArrayList<>(groups.values());
 
-        // Fish (anything in #minecraft:fishes) swim back and forth in the open water. Everything else (junk,
-        // treasure, loot boxes) rests on the rock shelves, one or two to a shelf.
-        List<Group> fish = new ArrayList<>(), others = new ArrayList<>();
-        for (Group g : list) (g.stacks.get(0).is(net.minecraft.tags.ItemTags.FISHES) ? fish : others).add(g);
+        // Bottom feeders (#salvagefishing:bottom_feeders) rest at the back of coves (shelves are for everything else).
+        // Other fish (#minecraft:fishes) swim in the open water: fast swimmers (#salvagefishing:fast_swimmers) lap a
+        // square, turning 90 degrees at each corner; the rest go back and forth. Everything else (junk, treasure,
+        // loot boxes) rests on the rock shelves, one or two to a shelf.
+        List<Group> fish = new ArrayList<>(), others = new ArrayList<>(), bottoms = new ArrayList<>();
+        for (Group g : list) {
+            ItemStack first = g.stacks.get(0);
+            (first.is(BOTTOM_FEEDERS) ? bottoms : first.is(net.minecraft.tags.ItemTags.FISHES) ? fish : others).add(g);
+        }
+        List<Group> resting = others;
 
         List<Entry> entries = new ArrayList<>();
         List<float[]> pos = new ArrayList<>();
         List<Float> taken = new ArrayList<>();
+        for (DiveCourse.Cove cv : course.coves()) {
+            List<Group> from = bottoms.isEmpty() ? others : bottoms;
+            if (from.isEmpty()) continue;
+            ItemStack st = pick(from, cv.restY() / DiveCourse.DEPTH, r);
+            entries.add(new Entry(st, cv.restX(), cv.restY()));
+            pos.add(new float[]{cv.restX(), cv.restY(), 0, 0, r.nextFloat(), 0, 0});
+            taken.add(cv.restY());
+        }
         for (DiveCourse.Shelf sh : course.shelves()) {
             int room = sh.room();
-            if (others.isEmpty() || room == 0) continue;
+            if (resting.isEmpty() || room == 0) continue;
             float iy = sh.top() - 12;
             float lo = Math.min(sh.base(), sh.tip()) + 12, hi = Math.max(sh.base(), sh.tip()) - 12;
             int n = room == 2 && r.nextFloat() < 0.5F ? 2 : 1;
             for (int k = 0; k < n; k++) {
                 float x = n == 1 ? lo + r.nextFloat() * (hi - lo) : (k == 0 ? lo : hi);
-                ItemStack st = pick(others, iy / DiveCourse.DEPTH, r);
+                ItemStack st = pick(resting, iy / DiveCourse.DEPTH, r);
                 entries.add(new Entry(st, x, iy));
-                pos.add(new float[]{x, iy, 0, 0, 0, 0});
+                pos.add(new float[]{x, iy, 0, 0, 0, 0, 0});
             }
             taken.add(iy);
         }
@@ -213,18 +233,21 @@ public final class DiveServer {
         while (y < DiveCourse.DEPTH - FISH_CLEAR) {
             float frac = y / DiveCourse.DEPTH;
             float iy = y;
+            ItemStack st = fish.isEmpty() ? ItemStack.EMPTY : pick(fish, frac, r);
+            boolean fast = st.is(FAST_SWIMMERS);
+            float ry = fast ? 10 + r.nextFloat() * 12 : 0; // a fast swimmer's square is this far above and below its centre
             boolean clear = true;
-            for (float t : taken) if (Math.abs(t - iy) < MIN_SPACING) clear = false;
-            float lo = course.leftMax(iy - 14, iy + 14) + 14, hi = course.rightMin(iy - 14, iy + 14) - 14;
-            if (clear && hi > lo && !fish.isEmpty()) {
-                ItemStack st = pick(fish, frac, r);
-                float range = Math.min((hi - lo) / 2F, 12 + r.nextFloat() * 40);
+            for (float t : taken) if (Math.abs(t - iy) < MIN_SPACING + ry) clear = false;
+            float lo = course.leftMax(iy - ry - 14, iy + ry + 14) + 14, hi = course.rightMin(iy - ry - 14, iy + ry + 14) - 14;
+            if (clear && hi > lo && !st.isEmpty() && iy + ry < DiveCourse.DEPTH - FISH_CLEAR) {
+                float range = Math.min((hi - lo) / 2F, (fast ? 16 : 12) + r.nextFloat() * (fast ? 30 : 40));
                 float centre = lo + range + r.nextFloat() * (hi - lo - 2 * range);
-                float speed = 14 + r.nextFloat() * 26;
+                float speed = fast ? 60 + r.nextFloat() * 30 : 14 + r.nextFloat() * 26;
                 entries.add(new Entry(st, centre, iy));
-                pos.add(new float[]{centre, iy, range, speed, r.nextFloat(), 1});
+                pos.add(new float[]{centre, iy, range, speed, r.nextFloat(), fast ? 2 : 1, ry});
+                taken.add(iy);
             }
-            y += MIN_SPACING + r.nextInt(65);
+            y += MIN_SPACING + r.nextInt(65) + 2 * ry;
         }
 
         // The floor treasure: one roll of the pool's floor table, resting in the middle of the floor.
@@ -235,7 +258,7 @@ public final class DiveServer {
                 if (st.isEmpty()) continue;
                 float fx = course.floorX(), fy = DiveCourse.DEPTH - 12;
                 entries.add(new Entry(st, fx, fy));
-                pos.add(new float[]{fx, fy, 0, 0, 0, 0});
+                pos.add(new float[]{fx, fy, 0, 0, 0, 0, 0});
                 break;
             }
         }

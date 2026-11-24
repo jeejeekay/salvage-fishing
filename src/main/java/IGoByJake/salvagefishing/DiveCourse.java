@@ -23,6 +23,18 @@ public final class DiveCourse {
     private final float[] left, right;
     private final boolean[] shelfTopRow;
     private final java.util.List<Shelf> shelves = new java.util.ArrayList<>();
+    private final java.util.List<Cove> coves = new java.util.ArrayList<>();
+
+    /**
+     * A cove: a pocket cut sideways into one wall, two rows tall, for a bottom feeder to hide in; the hook has to be
+     * jigged sideways into it while passing. side -1 = left wall, 1 = right wall. {@code top} / {@code bottom} are
+     * its depths, {@code back} its far wall, {@code mouth} where the shaft's wall is above and below it.
+     */
+    public record Cove(float top, float bottom, int side, float back, float mouth) {
+        /** Where something resting at the back of the cove sits (its centre). */
+        public float restX() { return back - side * 12; }
+        public float restY() { return bottom - 12; }
+    }
 
     /**
      * A flat shelf of rock jutting out from one wall, for treasure to rest on. side -1 = left wall, 1 = right wall.
@@ -115,6 +127,33 @@ public final class DiveCourse {
             shelfTopRow[r0] = true;
             shelves.add(new Shelf(r0 * ROW, side, base, realTip));
         }
+        // Coves: a few pockets cut into a wall, kept away from shelves and the very top and bottom.
+        int cy = 170 + r.nextInt(60);
+        while (cy < DEPTH - 110) {
+            int r0 = cy / ROW;
+            boolean nearShelf = false;
+            for (int[] sh : plan) if (Math.abs(sh[0] - r0) <= 3) nearShelf = true;
+            int depthPx = (3 + r.nextInt(2)) * STEP;
+            if (!nearShelf && r0 >= 2 && r0 + 3 < rows) {
+                float roomL = Math.min(left[r0], left[r0 + 1]) + edge, roomR = edge - Math.max(right[r0], right[r0 + 1]);
+                int side = roomL >= roomR ? -1 : 1;
+                float room = side < 0 ? roomL : roomR;
+                if (room >= depthPx) {
+                    float mouth = side < 0 ? Math.min(left[r0], left[r0 + 1]) : Math.max(right[r0], right[r0 + 1]);
+                    float back = mouth + side * depthPx;
+                    for (int k = r0; k <= r0 + 1; k++) {
+                        if (side < 0) left[k] = back; else right[k] = back;
+                    }
+                    shelfTopRow[r0 + 2] = true; // the cove's floor gets the pale top
+                    coves.add(new Cove(r0 * ROW, (r0 + 2) * ROW, side, back, mouth));
+                }
+            }
+            cy += 100 + r.nextInt(70);
+        }
+    }
+
+    public java.util.List<Cove> coves() {
+        return coves;
     }
 
     /** Where the floor treasure rests: the middle of the gap just above the floor. */
